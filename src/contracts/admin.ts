@@ -1,0 +1,17 @@
+import { z } from 'zod';
+import { IdSchema,VersionSchema } from './api';
+import { OrderStatusSchema,type ClientOrderDTO,type QuoteDTO } from './orders';
+import { OrderItemSchema } from './product-rules';
+import type { ProfileDTO } from './profile';
+export const ChangeStatusSchema=z.strictObject({expectedVersion:VersionSchema,status:OrderStatusSchema,reason:z.string().trim().max(1000).optional()}).refine(x=>x.status!=='cancelled'||!!x.reason,{path:['reason'],message:'Cancellation reason required'});
+export const CorrectOrderSchema=z.strictObject({expectedVersion:VersionSchema,items:z.array(OrderItemSchema).min(1).max(200).optional(),sidemark:z.string().trim().min(1).max(160).optional(),reason:z.string().trim().min(1).max(1000)});
+export const CreateQuoteSchema=z.strictObject({expectedVersion:VersionSchema,currency:z.string().regex(/^[A-Z]{3}$/),amountMinor:z.string().regex(/^(0|[1-9]\d{0,14})$/),notes:z.string().max(4000).default('')});
+export const ReviewTaxSchema=z.strictObject({expectedVersion:VersionSchema,status:z.enum(['approved','rejected']),certificateId:IdSchema,reason:z.string().trim().min(1).max(1000)});
+export type ChangeStatusInput=z.infer<typeof ChangeStatusSchema>;
+export type CorrectOrderInput=z.infer<typeof CorrectOrderSchema>;
+export type CreateQuoteInput=z.infer<typeof CreateQuoteSchema>;
+export type ReviewTaxInput=z.infer<typeof ReviewTaxSchema>;
+export type AuditDTO={id:string;actorName:string;action:string;reason:string|null;createdAt:string;revision:number;changes:Record<string,{before:unknown;after:unknown}>};
+export type InternalNoteDTO={id:string;authorName:string;text:string;createdAt:string};
+export type AdminOrderDTO=ClientOrderDTO&{organizationId:string;customerName:string;internalNotes:InternalNoteDTO[];audit:AuditDTO[];quotes:QuoteDTO[]};
+export type AdminCustomerDTO=ProfileDTO&{organizationId:string;orderCount:number};

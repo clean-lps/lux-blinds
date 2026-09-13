@@ -1,0 +1,2 @@
+import { test,expect } from '@playwright/test';
+test('foundation is reachable without external integrations',async({page,request})=>{const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');await expect(page.getByRole('heading',{name:'LUX Blinds'})).toBeVisible();const result=await request.get('/api/health');expect(result.ok()).toBe(true);expect(await result.json()).toMatchObject({scope:'foundation',integrations:'disabled'});expect(errors).toEqual([])});

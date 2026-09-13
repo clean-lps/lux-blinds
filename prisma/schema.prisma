@@ -1,0 +1,309 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  client
+  operator
+  admin
+}
+
+enum OrderStatus {
+  received
+  in_production
+  ready_for_installation
+  delivered
+  cancelled
+}
+
+model User {
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  emailVerified Boolean        @default(false)
+  image         String?
+  role          Role           @default(client)
+  disabledAt    DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  memberships   Membership[]
+  drafts        Draft[]
+  notifications Notification[]
+  consents      Consent[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model Organization {
+  id          String       @id @default(uuid())
+  companyName String
+  contactName String
+  phone       String
+  address     String       @default("")
+  taxId       String?
+  taxStatus   String       @default("pending")
+  revision    Int          @default(1)
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+  orders      Order[]
+  attachments Attachment[]
+  drafts      Draft[]
+}
+
+model Membership {
+  id             String       @id @default(uuid())
+  userId         String
+  organizationId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, organizationId])
+}
+
+model Draft {
+  id             String         @id @default(uuid())
+  userId         String         @unique
+  organizationId String
+  revision       Int            @default(1)
+  schemaVersion  Int            @default(1)
+  payload        Json
+  updatedAt      DateTime       @updatedAt
+  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versions       DraftVersion[]
+}
+
+model DraftVersion {
+  id        String   @id @default(uuid())
+  draftId   String
+  revision  Int
+  snapshot  Json
+  createdAt DateTime @default(now())
+  draft     Draft    @relation(fields: [draftId], references: [id], onDelete: Restrict)
+
+  @@unique([draftId, revision])
+}
+
+model Order {
+  id             String          @id @default(uuid())
+  number         String          @unique
+  organizationId String
+  createdBy      String
+  sidemark       String
+  status         OrderStatus     @default(received)
+  specialNotes   String          @default("")
+  revision       Int             @default(1)
+  submittedAt    DateTime        @default(now())
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  items          OrderItem[]
+  revisions      OrderRevision[]
+  attachments    Attachment[]
+  notes          InternalNote[]
+  quotes         Quote[]
+
+  @@index([organizationId, submittedAt, id])
+  @@index([status, submittedAt, id])
+  @@index([sidemark])
+}
+
+model OrderItem {
+  id             String  @id @default(uuid())
+  orderId        String
+  position       Int
+  quantity       Int
+  productType    String
+  productOther   String?
+  roomArea       String?
+  fabricName     String
+  widthEighths   Int
+  heightEighths  Int
+  unit           String  @default("in")
+  opening        String?
+  trackSupplied  Boolean
+  track          String?
+  trackOther     String?
+  fullness       String?
+  installation   String?
+  controlSide    String?
+  operation      String?
+  notes          String?
+  snapsManual    String?
+  snapsSuggested String?
+  snapsSource    String?
+  ruleVersion    String
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, position])
+}
+
+model OrderRevision {
+  id        String   @id @default(uuid())
+  orderId   String
+  revision  Int
+  actorId   String
+  reason    String
+  snapshot  Json
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, revision])
+}
+
+model Attachment {
+  id             String        @id @default(uuid())
+  organizationId String?
+  orderId        String?
+  challengeId    String?
+  uploadedBy     String?
+  purpose        String
+  name           String
+  storageKey     String        @unique
+  mediaType      String
+  byteSize       Int
+  sha256         String
+  scanStatus     String        @default("pending")
+  uploadStatus   String        @default("pending")
+  createdAt      DateTime      @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  order          Order?        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, orderId])
+}
+
+model Quote {
+  id          String    @id @default(uuid())
+  orderId     String
+  revision    Int
+  currency    String
+  amountMinor BigInt
+  status      String    @default("draft")
+  notes       String    @default("")
+  publishedAt DateTime?
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, revision])
+}
+
+model InternalNote {
+  id        String   @id @default(uuid())
+  orderId   String
+  authorId  String
+  text      String
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+}
+
+model AuditEvent {
+  id             String   @id @default(uuid())
+  actorId        String
+  organizationId String
+  resourceType   String
+  resourceId     String
+  action         String
+  redactedDiff   Json
+  requestId      String
+  createdAt      DateTime @default(now())
+
+  @@index([resourceType, resourceId, createdAt])
+}
+
+model Notification {
+  id          String    @id @default(uuid())
+  recipientId String
+  orderId     String?
+  type        String
+  title       String
+  safeBody    String
+  readAt      DateTime?
+  hiddenAt    DateTime?
+  createdAt   DateTime  @default(now())
+  recipient   User      @relation(fields: [recipientId], references: [id], onDelete: Restrict)
+
+  @@index([recipientId, readAt, createdAt])
+}
+
+model Consent {
+  id             String   @id @default(uuid())
+  userId         String
+  channel        String
+  granted        Boolean
+  wordingVersion String
+  source         String
+  recordedAt     DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+model Outbox {
+  id            String   @id @default(uuid())
+  eventId       String   @unique
+  channel       String
+  payload       Json
+  status        String   @default("pending")
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  lastErrorCode String?
+
+  @@index([status, nextAttemptAt])
+}
+
+model IdempotencyRecord {
+  id               String   @id @default(uuid())
+  actorId          String
+  route            String
+  key              String
+  requestHash      String
+  resultResourceId String
+  expiresAt        DateTime
+
+  @@unique([actorId, route, key])
+}

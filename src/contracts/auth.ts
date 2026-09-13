@@ -1,0 +1,15 @@
+import { z } from 'zod';
+import { IdSchema } from './api';
+export const RoleSchema=z.enum(['client','operator','admin']);
+export type Role=z.infer<typeof RoleSchema>;
+export type SafeUser={id:string;email:string;name:string;role:Role;verified:boolean};
+export type Actor={userId:string;organizationId:string;role:Role};
+export const LoginSchema=z.strictObject({email:z.email(),password:z.string().min(1).max(128)});
+export const RegisterSchema=z.strictObject({companyName:z.string().trim().min(1).max(160),contactName:z.string().trim().min(1).max(160),email:z.email(),phone:z.string().min(5).max(32),password:z.string().min(12).max(128),confirmPassword:z.string(),taxId:z.string().max(80).optional(),taxExempt:z.boolean(),certificateId:IdSchema.optional(),termsVersion:z.string().min(1),smsConsent:z.boolean().default(false),verificationMethod:z.enum(['email','sms'])}).refine(x=>x.password===x.confirmPassword,{path:['confirmPassword'],message:'Passwords must match'}).refine(x=>!x.taxExempt||!!x.certificateId,{path:['certificateId'],message:'Certificate required'}).refine(x=>x.verificationMethod!=='sms'||x.smsConsent,{path:['smsConsent'],message:'Choose email or opt in to SMS'});
+export const VerifySchema=z.strictObject({challengeId:IdSchema,code:z.string().regex(/^\d{6}$/)});
+export const ForgotPasswordSchema=z.strictObject({email:z.email()});
+export const ResetPasswordSchema=z.strictObject({token:z.string().min(1).max(512),newPassword:z.string().min(12).max(128),confirmation:z.string()}).refine(x=>x.newPassword===x.confirmation,{path:['confirmation'],message:'Passwords must match'});
+export type RegisterInput=z.infer<typeof RegisterSchema>;
+export type VerifyInput=z.infer<typeof VerifySchema>;
+export type LoginInput=z.infer<typeof LoginSchema>;
+export type ChallengeDTO={challengeId:string;expiresAt:string;resendAfter:string;maskedDestination:string};

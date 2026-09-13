@@ -1,0 +1,16 @@
+import { z } from 'zod';
+import { IdSchema,VersionSchema,QuerySchema } from './api';
+import { OrderItemSchema,type NormalizedOrderItem } from './product-rules';
+import type { AttachmentDTO } from './uploads';
+export { OrderItemSchema } from './product-rules';
+export type { OrderItemInput,NormalizedOrderItem } from './product-rules';
+export const OrderStatusSchema=z.enum(['received','in_production','ready_for_installation','delivered','cancelled']);
+export type OrderStatus=z.infer<typeof OrderStatusSchema>;
+export const CreateOrderSchema=z.strictObject({draftId:IdSchema.optional(),expectedDraftRevision:VersionSchema.optional(),sidemark:z.string().trim().min(1).max(160),items:z.array(OrderItemSchema).min(1).max(200),specialNotes:z.string().max(8000).default(''),attachmentIds:z.array(IdSchema).max(20).default([])}).refine(x=>!!x.draftId===!!x.expectedDraftRevision,{path:['expectedDraftRevision'],message:'Draft ID and revision must be supplied together'});
+export const OrderQuerySchema=QuerySchema.extend({status:OrderStatusSchema.optional()});
+export type CreateOrderInput=z.infer<typeof CreateOrderSchema>;
+export type OrderQuery=z.infer<typeof OrderQuerySchema>;
+export type QuoteDTO={id:string;revision:number;currency:string;amountMinor:string;notes:string;publishedAt:string|null};
+export type ClientOrderDTO={id:string;number:string;sidemark:string;status:OrderStatus;revision:number;submittedAt:string;items:(NormalizedOrderItem&{id:string})[];specialNotes:string;attachments:AttachmentDTO[];publishedQuote:QuoteDTO|null};
+export type OrderDTO=ClientOrderDTO;
+export type DashboardDTO={counts:{total:number;received:number;inProduction:number;completed:number};completedDefinition:'delivered-provisional';recentOrders:ClientOrderDTO[];draft:{id:string;revision:number;modelCount:number}|null};

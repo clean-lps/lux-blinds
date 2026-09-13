@@ -1,0 +1,10 @@
+import { z } from 'zod';
+import { IdSchema } from './api';
+import { OrderItemSchema } from './product-rules';
+export const DraftBuilderSchema=OrderItemSchema.partial().extend({fabricName:z.string().max(160).optional(),widthEighths:z.union([z.number().int().min(0),z.literal('')]).optional(),heightEighths:z.union([z.number().int().min(0),z.literal('')]).optional()});
+export const SaveDraftSchema=z.strictObject({expectedRevision:z.number().int().min(0),schemaVersion:z.literal(1),sidemark:z.string().max(160).default(''),items:z.array(OrderItemSchema).max(200),builder:DraftBuilderSchema,specialNotes:z.string().max(8000).default('')});
+export const RestoreDraftSchema=z.strictObject({versionId:IdSchema,expectedRevision:z.number().int().positive()});
+export type SaveDraftInput=z.infer<typeof SaveDraftSchema>;
+export type RestoreDraftInput=z.infer<typeof RestoreDraftSchema>;
+export type DraftDTO=Omit<SaveDraftInput,'expectedRevision'>&{id:string;revision:number;updatedAt:string;requiresPhotoReselection:boolean};
+export type DraftVersionDTO={id:string;draftId:string;revision:number;createdAt:string;snapshot:DraftDTO};

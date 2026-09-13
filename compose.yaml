@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: lux
+      POSTGRES_PASSWORD: local_only
+      POSTGRES_DB: lux
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - lux-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lux -d lux"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  lux-db:

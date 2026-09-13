@@ -1,0 +1,1 @@
+export default function Home(){return <main className="container"><section className="surface"><h1>LUX Blinds</h1><p>Application foundation</p><p>Client and administration modules will be integrated here.</p></section></main>}

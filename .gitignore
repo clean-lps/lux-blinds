@@ -1,0 +1,17 @@
+# Original screenshots may contain private account information.
+/docs/evidence/screens/*.png
+/docs/evidence/screens/*.jpg
+/docs/evidence/screens/*.jpeg
+/docs/evidence/screens/*.webp
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+.playwright-cli/
+output/
+test-results/
+playwright-report/
+*.log
+*.tsbuildinfo
+.worktrees/
