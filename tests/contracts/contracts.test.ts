@@ -1,5 +1,6 @@
 import { describe,it,expect } from 'vitest';
 import { CreateOrderSchema,SaveDraftSchema,RegisterSchema,ChangeStatusSchema,UploadIntentSchema,OrderItemSchema,CreateQuoteSchema,UpdateProfileSchema } from '@/contracts';
+import { hashOrderInput } from '@/server/orders/create';
 import { ripple } from '../fixtures/catalog';
 describe('shared boundary contracts',()=>{
 it('accepts synthetic order and rejects injected ownership',()=>{const input={sidemark:'DEMO',items:[ripple]};expect(CreateOrderSchema.safeParse(input).success).toBe(true);expect(CreateOrderSchema.safeParse({...input,organizationId:'another'}).success).toBe(false)});
@@ -8,4 +9,5 @@ it('allows incomplete draft builders without accepting untrusted fields',()=>{ex
 it('requires certificate for exemption and matching registration passwords',()=>{const input={companyName:'Demo',contactName:'Demo',email:'client@example.test',phone:'+10000000000',password:'synthetic-password',confirmPassword:'synthetic-password',taxExempt:false,termsVersion:'demo-1',verificationMethod:'email'};expect(RegisterSchema.safeParse(input).success).toBe(true);expect(RegisterSchema.safeParse({...input,taxExempt:true}).success).toBe(false);expect(RegisterSchema.safeParse({...input,confirmPassword:'different'}).success).toBe(false)});
 it('requires cancellation reason and exact integer money',()=>{expect(ChangeStatusSchema.safeParse({expectedVersion:1,status:'cancelled'}).success).toBe(false);expect(CreateQuoteSchema.safeParse({expectedVersion:1,currency:'USD',amountMinor:'12345'}).success).toBe(true);expect(CreateQuoteSchema.safeParse({expectedVersion:1,currency:'USD',amountMinor:'123.45'}).success).toBe(false)});
 it('rejects oversized files and profile role escalation',()=>{expect(UploadIntentSchema.safeParse({purpose:'order_photo',name:'demo.png',mediaType:'image/png',byteSize:10_000_001,sha256:'a'.repeat(64)}).success).toBe(false);expect(UpdateProfileSchema.safeParse({expectedVersion:1,companyName:'Demo',contactName:'Demo',phone:'00000',address:'Demo',role:'admin'}).success).toBe(false)});
+it('fingerprints order input deterministically for double-submit detection',()=>{const a={sidemark:'DEMO',specialNotes:'',attachmentIds:[],items:[ripple]};const b={sidemark:'DEMO',specialNotes:'',attachmentIds:[],items:[ripple]};const c={sidemark:'OTHER',specialNotes:'',attachmentIds:[],items:[ripple]};expect(hashOrderInput(a)).toBe(hashOrderInput(b));expect(hashOrderInput(a)).not.toBe(hashOrderInput(c));expect(()=>hashOrderInput({sidemark:'x',specialNotes:'',attachmentIds:[],items:[]} as any)).toThrow()});
 });

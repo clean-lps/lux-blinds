@@ -13,5 +13,6 @@ output/
 test-results/
 playwright-report/
 *.log
+logs/
 *.tsbuildinfo
 .worktrees/

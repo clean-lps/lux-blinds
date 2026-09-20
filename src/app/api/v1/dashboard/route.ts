@@ -1,0 +1,2 @@
+import { NextResponse } from 'next/server'; import { requireActor } from '@/server/auth/session'; import { getDashboard } from '@/server/orders/queries';
+export async function GET(r:Request){const requestId=r.headers.get('x-request-id')??crypto.randomUUID();try{return NextResponse.json({data:await getDashboard(await requireActor(r)),requestId});}catch{return NextResponse.json({error:{code:'UNAUTHORIZED',message:'Authentication required',retryable:false},requestId},{status:401});}}

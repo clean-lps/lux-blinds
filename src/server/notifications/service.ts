@@ -1,0 +1,6 @@
+import type {Actor} from '@/contracts/auth'; import type {NotificationDTO} from '@/contracts/notifications'; import {db} from '@/server/db';
+const dto=(n:any):NotificationDTO=>({id:n.id,title:n.title,body:n.safeBody,orderId:n.orderId,readAt:n.readAt?.toISOString()??null,createdAt:n.createdAt.toISOString()});
+export async function listNotifications(a:Actor,q:{cursor?:string;unread?:boolean}){const rows=await db.notification.findMany({where:{recipientId:a.userId,...(q.unread?{readAt:null}:{}),hiddenAt:null},orderBy:{createdAt:'desc'},take:51});return{data:rows.slice(0,50).map(dto),page:{nextCursor:rows.length>50?rows[49]!.id:null},requestId:''};}
+export async function markNotificationRead(a:Actor,id:string){const r=await db.notification.updateMany({where:{id,recipientId:a.userId},data:{readAt:new Date()}});if(!r.count)throw new Error('not found');return{success:true};}
+export async function readAll(a:Actor,before:Date){await db.notification.updateMany({where:{recipientId:a.userId,readAt:null,createdAt:{lte:before}},data:{readAt:new Date()}});return{success:true};}
+export async function clearRead(a:Actor,before:Date){await db.notification.updateMany({where:{recipientId:a.userId,readAt:{not:null},createdAt:{lte:before}},data:{hiddenAt:new Date()}});return{success:true};}
