@@ -51,7 +51,7 @@ export async function getProfile(actor: Actor): Promise<ProfileDTO> {
     emailVerified: user.emailVerified,
     smsConsent: consent?.granted ?? false,
     taxStatus: org.taxStatus as 'pending' | 'approved' | 'rejected',
-    certificateId: null,
+    certificateId: (await db.attachment.findFirst({ where: { organizationId: org.id, purpose: 'tax_certificate', uploadStatus: 'uploaded', scanStatus: 'clean' }, orderBy: { createdAt: 'desc' }, select: { id: true } }))?.id ?? null,
   };
 }
 
@@ -81,8 +81,8 @@ export async function updateProfile(actor: Actor, input: unknown): Promise<Profi
     throw new ProfileConflictError();
   }
 
-  await db.organization.update({
-    where: { id: org.id },
+  const updated = await db.organization.updateMany({
+    where: { id: org.id, revision: data.expectedVersion },
     data: {
       companyName: data.companyName,
       contactName: data.contactName,
@@ -92,6 +92,7 @@ export async function updateProfile(actor: Actor, input: unknown): Promise<Profi
     },
   });
 
+  if (!updated.count) throw new ProfileConflictError();
   return getProfile(actor);
 }
 

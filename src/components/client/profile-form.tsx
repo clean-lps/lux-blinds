@@ -6,6 +6,7 @@ import { apiErrorMessage, ClientApiError } from './api';
 import { changePassword, getProfile, updateConsent, updateProfile } from './account-api';
 import { ClientField } from './client-shell';
 import styles from './client-ui.module.css';
+import { uploadFile } from './upload-file';
 
 type FormErrors = Record<string, string>;
 
@@ -30,6 +31,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: ProfileDTO }) 
   const [smsEnabled, setSmsEnabled] = useState(initialProfile.smsConsent);
   const [smsPending, setSmsPending] = useState(false);
   const [certificateName, setCertificateName] = useState<string | null>(null);
+  const [uploadingCertificate, setUploadingCertificate] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -38,7 +40,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: ProfileDTO }) 
       setProfile(live);
       setValues({ companyName: live.companyName, contactName: live.contactName, phone: live.phone, address: live.address });
       setSmsEnabled(live.smsConsent);
-    }).catch(() => {});
+    }).catch(error => { if (active) setMessage(apiErrorMessage(error)); });
     return () => { active = false; };
   }, []);
 
@@ -54,7 +56,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: ProfileDTO }) 
     }
     setSaving(true);
     try {
-      await updateProfile(result.data);
+      setProfile(await updateProfile(result.data));
       setMessage('Profile saved.');
     } catch (error) {
       setMessage(apiErrorMessage(error));
@@ -79,7 +81,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: ProfileDTO }) 
     try {
       await changePassword(passwords);
       setPasswords({ currentPassword: '', newPassword: '', confirmation: '' });
-      setPasswordMessage('Password updated. Other sessions will be revoked by the server.');
+      window.location.assign('/login');
     } catch (error) {
       setPasswordMessage(apiErrorMessage(error));
     } finally {
@@ -101,14 +103,20 @@ export function ProfileForm({ initialProfile }: { initialProfile: ProfileDTO }) 
     }
   }
 
-  function handleCertificate(event: ChangeEvent<HTMLInputElement>) {
-    setCertificateName(event.target.files?.[0]?.name ?? null);
+  async function handleCertificate(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type) || file.size > 10_000_000 || !file.size) { setMessage('Choose a PDF, JPG or PNG up to 10 MB.'); return; }
+    setUploadingCertificate(true);
+    try { await uploadFile(file, 'tax_certificate'); setCertificateName(file.name); setProfile(await getProfile()); setMessage('Certificate uploaded.'); }
+    catch (error) { setMessage(apiErrorMessage(error)); }
+    finally { setUploadingCertificate(false); event.target.value = ''; }
   }
 
   return (
     <section className={styles.surface} aria-labelledby="profile-form-title">
       <div className={styles.surfaceHeader}><div><h2 id="profile-form-title" className={styles.surfaceTitle}>Contact information</h2><p className={styles.surfaceIntro}>Keep your company and contact details current.</p></div><span className={styles.badge}>Revision {profile.revision}</span></div>
-      {message ? <div className={message === 'Profile saved.' || message === 'SMS consent updated.' ? styles.success : styles.error} role="status"><p>{message}</p></div> : null}
+      {message ? <div className={message === 'Profile saved.' || message === 'Certificate uploaded.' ? styles.success : styles.error} role="status"><p>{message}</p></div> : null}
       <form id="profile-form" className={styles.form} onSubmit={handleProfile} noValidate>
         <div className={styles.twoColumns}>
           <ClientField id="profileCompany" label="Company Name *" error={errors.companyName}><input className={styles.input} id="profileCompany" value={values.companyName} onChange={(event) => setValues((current) => ({ ...current, companyName: event.target.value }))} autoComplete="organization" aria-invalid={Boolean(errors.companyName)} /></ClientField>
@@ -134,15 +142,14 @@ export function ProfileForm({ initialProfile }: { initialProfile: ProfileDTO }) 
 
       <div className={styles.sectionBreak} />
 
-      <div className={styles.sectionGroup}><h2 className={styles.sectionGroupTitle}>Tax Exempt Certificate</h2><p className={styles.sectionGroupIntro}>{certificateName ?? (profile.certificateId ? 'Certificate on file' : 'No certificate uploaded')} · private upload connection pending.</p></div>
-      <input className={styles.file} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" onChange={handleCertificate} aria-label="Choose tax exempt certificate" />
-      <p className={styles.small}>PDF, JPG, PNG or WebP. Maximum 10 MB. Tax status remains controlled by LUX Blinds.</p>
+      <div className={styles.sectionGroup}><h2 className={styles.sectionGroupTitle}>Tax Exempt Certificate</h2><p className={styles.sectionGroupIntro}>{uploadingCertificate ? 'Uploading…' : certificateName ?? (profile.certificateId ? 'Certificate on file' : 'No certificate uploaded')}</p></div>
+      <input className={styles.file} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={uploadingCertificate} onChange={handleCertificate} aria-label="Choose tax exempt certificate" />
+      <p className={styles.small}>PDF, JPG or PNG. Maximum 10 MB. Tax status remains controlled by LUX Blinds.</p>
 
       <div className={styles.sectionBreak} />
 
       <div className={styles.buttonRow}><span className={styles.spacer} /><button className={styles.button} type="submit" form="profile-form" disabled={saving}>{saving ? 'Saving…' : 'Save Profile'}</button></div>
       <p className={styles.sourceNote}>Sensitive changes are sent with the profile revision; a 409 conflict must be reloaded before editing again.</p>
-      <button className={styles.buttonSecondary} type="button" onClick={handleSms} disabled={smsPending}>{smsPending ? 'Updating…' : smsEnabled ? 'Disable SMS' : 'Activate SMS'}</button>
     </section>
   );
 }

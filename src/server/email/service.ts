@@ -37,13 +37,15 @@ export async function sendVerificationEmail(
         subject,
         html,
       });
+      if (result.error || !result.data?.id) throw new Error('Email provider rejected delivery');
       console.log(`[EMAIL] Sent ${type} code to ${to} via Resend (id: ${result.data?.id})`);
       return { id: result.data?.id ?? 'unknown', provider: 'resend' };
     } catch (err) {
-      console.error(`[EMAIL] Resend failed, falling back to mock:`, err);
+      throw new Error('Email delivery failed. Please retry.');
     }
   }
 
+  if (process.env.NODE_ENV === 'production') throw new Error('Email provider is not configured');
   console.log(`[EMAIL:MOCK] ${type} code for ${to}: ${code}`);
   return { id: `mock-${Date.now()}`, provider: 'mock' };
 }
@@ -53,13 +55,15 @@ export async function sendTransactionalEmail(to: string, subject: string, html: 
     try {
       const client = getClient();
       const result = await client.emails.send({ from: fromAddress, to: [to], subject, html });
+      if (result.error || !result.data?.id) throw new Error('Email provider rejected delivery');
       console.log(`[EMAIL] Sent "${subject}" to ${to} via Resend (id: ${result.data?.id})`);
       return { id: result.data?.id ?? 'unknown', provider: 'resend' };
     } catch (err) {
-      console.error('[EMAIL] Resend failed, falling back to mock:', err);
+      throw new Error('Email delivery failed. Please retry.');
     }
   }
 
+  if (process.env.NODE_ENV === 'production') throw new Error('Email provider is not configured');
   console.log(`[EMAIL:MOCK] "${subject}" for ${to}: ${html.slice(0, 160)}`);
   return { id: `mock-${Date.now()}`, provider: 'mock' };
 }

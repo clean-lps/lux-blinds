@@ -37,5 +37,5 @@ export function isRevisionConflict(error: unknown) {
 }
 
 export function draftStatusLabel(status: DraftSyncStatus) {
-  return status === 'pending' ? 'Saving draft…' : status === 'saved' ? 'Draft saved' : status === 'offline' ? 'Offline · saved on this device' : status === 'conflict' ? 'Draft conflict needs review' : status === 'error' ? 'Could not save draft' : 'Draft preview';
+  return status === 'pending' ? 'Saving draft…' : status === 'saved' ? 'Draft saved' : status === 'offline' ? 'Offline · saved on this device' : status === 'conflict' ? 'Draft conflict needs review' : status === 'error' ? 'Could not save draft' : 'New draft';
 }

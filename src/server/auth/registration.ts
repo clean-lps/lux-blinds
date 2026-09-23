@@ -296,7 +296,7 @@ export async function verifyChallenge(input: unknown): Promise<SafeUser> {
       registrationData.phone || '0000000000',
       registrationData.address || '',
       registrationData.taxId || null,
-      registrationData.taxExempt ? 'approved' : 'pending'
+      'pending'
     );
 
     await db.$executeRawUnsafe(

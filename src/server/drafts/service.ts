@@ -50,7 +50,7 @@ function toDraftDto(draft: DraftRecord): DraftDTO {
     ...(draft.payload as object),
     expectedRevision: 0,
   });
-  if (!parsed.success) throw new DraftValidationError();
+  if (!parsed.success || parsed.data.expectedRevision === undefined) throw new DraftValidationError();
   return {
     ...payload(parsed.data),
     id: draft.id,
@@ -156,7 +156,7 @@ export async function listDraftVersions(actor: Actor, query: { cursor?: string; 
     take: query.limit + 1,
   });
   const page = versions.slice(0, query.limit).map(toVersionDto);
-  const next = versions[query.limit];
+  const next = versions.length > query.limit ? versions[query.limit - 1] : undefined;
   return { data: page, page: { nextCursor: next ? `${next.createdAt.toISOString()}:${next.id}` : null }, requestId: '' };
 }
 

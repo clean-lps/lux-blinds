@@ -1,6 +1,7 @@
 import { Dashboard } from '@/components/client/dashboard';
-import { previewDashboard } from '@/components/client/presentation-data';
+import { pageActor } from '@/server/auth/page-actor';
+import { getDashboard } from '@/server/orders/queries';
 
-export default function MyPanelPage() {
-  return <Dashboard data={previewDashboard} />;
+export default async function MyPanelPage() {
+  return <Dashboard data={await getDashboard(await pageActor())} />;
 }

@@ -27,7 +27,7 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export async function requireActor(request: Request): Promise<Actor> {
+export async function requireActor(request: Pick<Request, 'headers'>): Promise<Actor> {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) throw new UnauthorizedError();
 

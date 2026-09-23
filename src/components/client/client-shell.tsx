@@ -16,9 +16,9 @@ const navigation = [
 
 export type ClientNavKey = (typeof navigation)[number]['key'];
 
-export type ClientDataMode = 'loading' | 'live' | 'preview';
+export type ClientDataMode = 'loading' | 'live' | 'error';
 
-export function ClientShell({ title, description, active, children, actions, dataMode = 'preview' }: { title: string; description: string; active: ClientNavKey; children: ReactNode; actions?: ReactNode; dataMode?: ClientDataMode }) {
+export function ClientShell({ title, description, active, children, actions, dataMode = 'live' }: { title: string; description: string; active: ClientNavKey; children: ReactNode; actions?: ReactNode; dataMode?: ClientDataMode }) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
 

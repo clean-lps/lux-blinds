@@ -12,11 +12,11 @@ export function OrderReview({ open, sidemark, items, notes, attachments, error, 
     if (!open) return undefined;
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && !submitting) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, submitting]);
 
   if (!open) return null;
   const totalQuantity = items.reduce((total, entry) => total + entry.item.quantity, 0);
@@ -25,7 +25,7 @@ export function OrderReview({ open, sidemark, items, notes, attachments, error, 
       <section className={styles.review} role="dialog" aria-modal="true" aria-labelledby="order-review-title">
         <header className={styles.reviewHeader}>
           <div><h2 id="order-review-title">Review order</h2><p>Confirm the details before sending the order.</p></div>
-          <button ref={closeRef} className={styles.close} type="button" aria-label="Close review" onClick={onClose}>×</button>
+          <button ref={closeRef} className={styles.close} type="button" disabled={submitting} aria-label="Close review" onClick={onClose}>×</button>
         </header>
         <div className={styles.reviewBody}>
           {error ? <div className={styles.error} role="alert"><p>{error}</p></div> : null}
@@ -35,7 +35,7 @@ export function OrderReview({ open, sidemark, items, notes, attachments, error, 
           {notes ? <div className={styles.reviewRow}><strong>Special notes</strong><p>{notes}</p></div> : null}
         </div>
         <footer className={styles.reviewFooter}>
-          <button className={styles.buttonSecondary} type="button" onClick={onClose}>Keep editing</button>
+          <button className={styles.buttonSecondary} type="button" disabled={submitting} onClick={onClose}>Keep editing</button>
           <button className={styles.button} type="button" disabled={submitting || !items.length || !sidemark.trim()} onClick={onSubmit}>{submitting ? 'Submitting…' : 'Submit order'}</button>
         </footer>
       </section>

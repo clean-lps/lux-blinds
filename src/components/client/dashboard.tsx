@@ -22,15 +22,15 @@ export function Dashboard({ data: initialData }: { data: DashboardDTO }) {
       setLoadError(null);
     }).catch((error) => {
       if (!active) return;
-      setDataMode('preview');
+      setDataMode('error');
       setLoadError(apiErrorMessage(error));
     });
     return () => { active = false; };
   }, []);
 
   return (
-    <ClientShell title="Client Dashboard" description="Welcome, Demo Contact" active="dashboard" dataMode={dataMode}>
-      {loadError ? <div className={styles.info} role="status"><p>Showing shared presentation data until an authenticated backend session is available. {loadError}</p></div> : null}
+    <ClientShell title="Client Dashboard" description="Welcome to your account" active="dashboard" dataMode={dataMode}>
+      {loadError ? <div className={styles.error} role="alert"><p>Could not refresh your orders. {loadError}</p></div> : null}
 
       <section className={styles.hero}>
         <div>
@@ -106,7 +106,7 @@ export function Dashboard({ data: initialData }: { data: DashboardDTO }) {
             </div>
           </div>
         )}
-        <p className={styles.sourceNote}>Completed is the provisional server-defined metric: {data.completedDefinition}.</p>
+        <p className={styles.sourceNote}>Completed orders have been delivered.</p>
       </section>
     </ClientShell>
   );

@@ -21,7 +21,7 @@ export async function enqueueOutbox(channel: string, payload: unknown): Promise<
 
 export async function processOutboxBatch(now = new Date()) {
   const rows = await db.outbox.findMany({
-    where: { status: 'pending', nextAttemptAt: { lte: now } },
+    where: { status: { in: ['pending', 'processing'] }, nextAttemptAt: { lte: now } },
     take: 50,
     orderBy: { nextAttemptAt: 'asc' },
   });
@@ -29,6 +29,8 @@ export async function processOutboxBatch(now = new Date()) {
   let processed = 0;
   let failed = 0;
   for (const row of rows) {
+    const claimed = await db.outbox.updateMany({ where: { id: row.id, status: row.status, nextAttemptAt: { lte: now } }, data: { status: 'processing', nextAttemptAt: new Date(Date.now() + 300000) } });
+    if (!claimed.count) continue;
     try {
       await dispatchOutboxEvent(row.channel, row.payload);
       await db.outbox.update({

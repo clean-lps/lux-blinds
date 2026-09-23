@@ -6,9 +6,10 @@ import type {OrderStatus} from '@/contracts/orders';
 import {OrderDetailApiRequestError, type OrderDetailApi} from './order-detail-api';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {received: 'Received', in_production: 'In Production', ready_for_installation: 'Ready for Installation', delivered: 'Delivered', cancelled: 'Cancelled'};
-const STATUSES: OrderStatus[] = ['received', 'in_production', 'ready_for_installation', 'delivered', 'cancelled'];
+import { orderTransitions } from '@/contracts/order-transitions';
 
 export function StatusControl({order, api, onClose, onSaved}: {order: AdminOrderDTO;api: OrderDetailApi;onClose: () => void;onSaved: (order: AdminOrderDTO) => void}) {
+  const STATUSES = orderTransitions[order.status];
   const [status, setStatus] = useState<OrderStatus>(order.status === 'received' ? 'in_production' : order.status === 'in_production' ? 'ready_for_installation' : 'delivered');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);

@@ -43,9 +43,13 @@ export async function presignPut(storageKey: string, mediaType: string, expiresI
 }
 
 export async function presignGet(storageKey: string, expiresInSeconds = 60): Promise<string> {
-  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: bucket!, Key: storageKey }), {
+  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: bucket!, Key: storageKey, ResponseContentDisposition: 'attachment' }), {
     expiresIn: expiresInSeconds,
   });
+}
+
+export async function storeVerifiedObject(storageKey: string, bytes: Buffer, mediaType: string) {
+  await getClient().send(new PutObjectCommand({Bucket:bucket!,Key:storageKey,Body:bytes,ContentType:mediaType,ContentDisposition:'attachment'}));
 }
 
 export async function headObject(storageKey: string): Promise<{ byteSize: number; mediaType?: string } | null> {

@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { AttachmentDTO, OrderItemInput } from '@/contracts';
-import { apiErrorMessage } from './api';
+import { apiErrorMessage, ClientApiError } from './api';
 import { ClientField, ClientShell } from './client-shell';
 import { DraftStatus } from './draft-status';
 import { orderApi } from './order-api';
@@ -22,7 +23,8 @@ function SelectField({ id, label, value, options, onChange, error, disabled = fa
 }
 
 export function OrderBuilder() {
-  const [sidemark, setSidemark] = useState('DEMO-001');
+  const router = useRouter();
+  const [sidemark, setSidemark] = useState('');
   const [specialNotes, setSpecialNotes] = useState('');
   const [builder, setBuilder] = useState<BuilderDraft>({ ...emptyBuilder });
   const [items, setItems] = useState<BuilderItem[]>([]);
@@ -37,6 +39,11 @@ export function OrderBuilder() {
   const [draftStatus, setDraftStatus] = useState<'idle' | 'pending' | 'saved' | 'offline' | 'conflict' | 'error'>('idle');
   const [requiresPhotoReselection, setRequiresPhotoReselection] = useState(false);
   const submissionKeyRef = useRef<string | null>(null);
+  const draftRef = useRef<{ id: string; revision: number } | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveBlocked = useRef(false);
+  const submittingRef = useRef(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   const fields = useMemo(() => sanitizeBuilderForProduct(builder), [builder]);
   const visible = useMemo(() => visibleProductFields(fields.productType, fields.productOther, fields.trackSupplied), [fields]);
@@ -46,36 +53,42 @@ export function OrderBuilder() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const draftId = params.get('draft');
-    if (!draftId) return;
     let active = true;
     orderApi.getDraft().then((serverDraft) => {
       if (!active) return;
-      if (serverDraft.id === draftId && serverDraft.items.length) {
-        setSidemark(serverDraft.sidemark || sidemark);
+      if (serverDraft) {
+        draftRef.current = { id: serverDraft.id, revision: serverDraft.revision };
+        setSidemark(serverDraft.sidemark);
+        setItems(serverDraft.items.map(item => ({ id: nextId(), item })));
         setSpecialNotes(serverDraft.specialNotes || '');
         setRequiresPhotoReselection(serverDraft.requiresPhotoReselection);
         setDraftStatus('saved');
       }
-    }).catch(() => {});
+      setDraftLoaded(true);
+    }).catch((error) => { if (active) { setDraftStatus('error'); setSubmitError(apiErrorMessage(error)); } });
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    if (!sidemark.trim() && !items.length && !specialNotes.trim()) return undefined;
+    if (!draftLoaded || submitting || submittedOrder || saveBlocked.current) return;
+    if (!sidemark.trim() && !items.length && !specialNotes.trim() && !draftRef.current) return undefined;
     setDraftStatus('pending');
     const timer = window.setTimeout(() => {
-      try {
-        window.localStorage.setItem('lux-blinds:client-preview-draft', JSON.stringify({ sidemark, items, specialNotes }));
-        setDraftStatus('saved');
-        orderApi.saveDraft({ schemaVersion: 1, sidemark: sidemark.trim(), items: items.map((e) => e.item), builder: { productType: 'Other' }, specialNotes }).catch(() => {});
-      } catch {
-        setDraftStatus('offline');
-      }
+      saveQueue.current = saveQueue.current.then(async () => {
+        if (saveBlocked.current || submittingRef.current) return;
+        try {
+          const saved = await orderApi.saveDraft({ expectedRevision: draftRef.current?.revision ?? 0, schemaVersion: 1, sidemark: sidemark.trim(), items: items.map(e => e.item), builder: {}, specialNotes });
+          draftRef.current = { id: saved.id, revision: saved.revision };
+          setDraftStatus('saved');
+        } catch (error) {
+          saveBlocked.current = true;
+          setDraftStatus(error instanceof ClientApiError && error.status === 409 ? 'conflict' : 'error');
+          setSubmitError(`${apiErrorMessage(error)} Reload this page before continuing.`);
+        }
+      });
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [items, sidemark, specialNotes]);
+  }, [items, sidemark, specialNotes, draftLoaded, submitting, submittedOrder]);
 
   function updateBuilder(next: Partial<BuilderDraft>) {
     setBuilder(sanitizeBuilderForProduct({ ...builder, ...next }));
@@ -135,23 +148,30 @@ export function OrderBuilder() {
       setSubmitError('Add at least one model before submitting.');
       return;
     }
-    if (uploads.length) {
-      setSubmitError('Private photo upload is not connected yet. Remove selected photos before submitting this presentation order.');
+    if (uploads.some(entry => entry.status !== 'uploaded' || !entry.intent)) {
+      setSubmitError('Upload every selected photo successfully, or remove it, before submitting.');
       return;
     }
     setSubmitError(null);
     setSubmitting(true);
+    submittingRef.current = true;
     const idempotencyKey = submissionKeyRef.current ?? nextId();
     submissionKeyRef.current = idempotencyKey;
     try {
-      const order = await orderApi.createOrder({ sidemark: sidemark.trim(), items: items.map((entry) => entry.item), specialNotes, attachmentIds: [] }, idempotencyKey);
+      await saveQueue.current;
+      if (saveBlocked.current) throw new Error('Draft conflict');
+      const draft = draftRef.current;
+      const order = await orderApi.createOrder({ ...(draft ? { draftId: draft.id, expectedDraftRevision: draft.revision } : {}), sidemark: sidemark.trim(), items: items.map((entry) => entry.item), specialNotes, attachmentIds: uploads.map(entry => entry.intent!.attachmentId) }, idempotencyKey);
       setSubmittedOrder(order.number);
       setReviewOpen(false);
       submissionKeyRef.current = null;
+      router.push(`/orders/${order.id}`);
+      router.refresh();
     } catch (error) {
       setSubmitError(apiErrorMessage(error));
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 
@@ -159,12 +179,13 @@ export function OrderBuilder() {
   return (
     <ClientShell title="New Order" description="Add one or multiple curtains/models to the same order." active="new-order">
       <section className={styles.surface}>
-        <div className={styles.info}><p><strong>Draft preview.</strong> Synthetic state only. No information is saved to the server in this presentation.</p></div>
-        <div className={styles.buttonRow} style={{ marginTop: 18 }}><DraftStatus status={draftStatus} /><span className={styles.spacer} /><span className={styles.small}>Auto-save preview uses a 1200 ms debounce.</span></div>
+        <div className={styles.info}><p>Your added models and order notes are saved to your account. Upload selected photos before submitting.</p></div>
+        <div className={styles.buttonRow} style={{ marginTop: 18 }}><DraftStatus status={draftStatus} /><span className={styles.spacer} /><span className={styles.small}>{draftLoaded ? 'Automatic draft saving enabled.' : 'Loading your saved draft…'}</span></div>
+        <fieldset disabled={!draftLoaded || submitting || !!submittedOrder || saveBlocked.current} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 
         <div className={styles.builderSection}>
           <ClientField id="sidemark" label="Sidemark *" error={!sidemark.trim() ? 'Sidemark is required before review.' : undefined}>
-            <input {...common} id="sidemark" value={sidemark} onChange={(event) => setSidemark(event.target.value)} placeholder="DEMO-001" aria-required="true" />
+            <input {...common} id="sidemark" value={sidemark} onChange={(event) => setSidemark(event.target.value)} placeholder="Project or customer reference" aria-required="true" />
           </ClientField>
         </div>
 
@@ -214,8 +235,9 @@ export function OrderBuilder() {
         {submittedOrder ? <div className={styles.success} role="status"><p>Order {submittedOrder} was accepted by the API.</p></div> : null}
         {submitError ? <div className={styles.error} role="alert"><p>{submitError}</p></div> : null}
         <div className={styles.buttonRow}><span className={styles.spacer} /><button className={styles.button} type="button" disabled={!items.length || !sidemark.trim()} onClick={() => { setSubmitError(null); submissionKeyRef.current = submissionKeyRef.current ?? nextId(); setReviewOpen(true); }}>Review order</button></div>
+        </fieldset>
       </section>
-      <OrderReview open={reviewOpen} sidemark={sidemark} items={items} notes={specialNotes} attachments={uploads.map((entry): AttachmentDTO => ({ id: entry.id, name: entry.file.name, mediaType: entry.file.type || 'application/octet-stream', byteSize: entry.file.size, scanStatus: 'pending', uploadStatus: 'pending' }))} error={submitError} submitting={submitting} onClose={() => { setReviewOpen(false); if (!submitting) submissionKeyRef.current = null; }} onSubmit={submitOrder} />
+      <OrderReview open={reviewOpen} sidemark={sidemark} items={items} notes={specialNotes} attachments={uploads.map((entry): AttachmentDTO => ({ id: entry.id, name: entry.file.name, mediaType: entry.file.type || 'application/octet-stream', byteSize: entry.file.size, scanStatus: entry.status === 'uploaded' ? 'clean' : 'pending', uploadStatus: entry.status === 'uploaded' ? 'uploaded' : 'pending' }))} error={submitError} submitting={submitting} onClose={() => { if (!submitting) setReviewOpen(false); }} onSubmit={submitOrder} />
     </ClientShell>
   );
 }

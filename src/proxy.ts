@@ -10,7 +10,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname === '/api/health') {
+  if (pathname === '/api/health' || pathname === '/api/internal/outbox') {
     return NextResponse.next();
   }
 

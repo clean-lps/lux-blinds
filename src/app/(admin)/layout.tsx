@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
+import { headers } from 'next/headers';
 import { auth } from '@/server/auth/session';
 import {AdminNav} from '@/components/admin/admin-nav';
 
@@ -138,9 +138,9 @@ const ADMIN_STYLES = `
 `;
 
 export default async function AdminLayout({children}: Readonly<{children: ReactNode}>) {
-  const cookieStore = await cookies();
-  const session = await auth.api.getSession({ headers: new Headers(Object.fromEntries(cookieStore.getAll().map(c => [c.name, c.value]))) });
-  if (!session || session.user.role !== 'admin') {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect('/login');
+  if (session.user.role !== 'admin' && session.user.role !== 'operator') {
     redirect('/my-panel');
   }
   return (

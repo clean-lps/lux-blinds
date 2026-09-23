@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {useCallback, useEffect, useState, type FormEvent} from 'react';
 import {ReviewTaxSchema, type AdminCustomerDTO} from '@/contracts/admin';
+import { AttachmentDownload } from '@/components/client/attachment-download';
 import {AdminApiRequestError, createAdminApi, createFixtureAdminApi, type AdminApi} from './admin-api';
 
 function taxLabel(status: AdminCustomerDTO['taxStatus']): string {
@@ -27,7 +28,7 @@ export function CustomerDetail({customerId, api: injectedApi, canReviewTax}: {cu
       return;
     }
     const params = new URLSearchParams(window.location.search);
-    const usePreview = params.get('preview') === 'fixtures';
+    const usePreview = process.env.NODE_ENV !== 'production' && params.get('preview') === 'fixtures';
     setPreview(usePreview);
     setEffectiveCanReviewTax(Boolean(canReviewTax) || (usePreview && params.get('role') === 'admin'));
     setApi(usePreview ? createFixtureAdminApi() : createAdminApi());
@@ -78,6 +79,7 @@ export function CustomerDetail({customerId, api: injectedApi, canReviewTax}: {cu
   return (
     <>
       <header className="admin-page-header"><div><p className="admin-kicker">Customer record</p><h1>{customer.companyName}</h1><p>Profile details and tax documentation for staff review.</p></div><div className="admin-actions"><Link className="admin-button secondary" href={preview ? '/admin-customers?preview=fixtures' : '/admin-customers'}>← All customers</Link></div></header>
+      {effectiveCanReviewTax && customer.certificateId ? <AttachmentDownload id={customer.certificateId} name="Open tax certificate" /> : null}
       {feedback && <div className="admin-alert" role="status">{feedback}</div>}
       <div className="admin-detail-grid">
         <div className="admin-stack">

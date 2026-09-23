@@ -4,7 +4,7 @@ import type { AttachmentDTO, DownloadDTO, PendingUploadActor, UploadIntentDTO, U
 import { UploadIntentSchema } from '@/contracts/uploads';
 import { db } from '@/server/db';
 import { scanQuarantinedObject } from '@/server/storage/scanner';
-import { getObjectBytes, headObject, isS3Configured, presignGet, presignPut } from '@/server/storage/s3';
+import { getObjectBytes, headObject, isS3Configured, presignGet, presignPut, storeVerifiedObject } from '@/server/storage/s3';
 
 type UploadActor = Actor | PendingUploadActor;
 type LocalObject = { bytes: Buffer; mediaType: string; expiresAt: Date };
@@ -121,11 +121,11 @@ export async function createUploadIntent(actor: UploadActor, input: UploadIntent
       sha256: cleanInput.sha256,
     },
   });
-  localObjects.set(attachment.id, { bytes: Buffer.alloc(0), mediaType: cleanInput.mediaType, expiresAt });
   if (isS3Configured()) {
     const url = await presignPut(attachment.storageKey, cleanInput.mediaType);
     return { attachmentId: attachment.id, url, expiresAt: expiresAt.toISOString(), method: 'PUT', headers: { 'Content-Type': cleanInput.mediaType } };
   }
+  localObjects.set(attachment.id, { bytes: Buffer.alloc(0), mediaType: cleanInput.mediaType, expiresAt });
   return { attachmentId: attachment.id, url: `local-test://upload/${attachment.id}`, expiresAt: expiresAt.toISOString(), method: 'PUT', headers: {} };
 }
 
@@ -138,6 +138,8 @@ export function putLocalTestObject(attachmentId: string, bytes: Buffer, mediaTyp
 
 export async function completeUpload(actor: UploadActor, attachmentId: string, checksum: string): Promise<AttachmentDTO> {
   const attachment = await ownedAttachment(actor, attachmentId);
+  if (checksum !== attachment.sha256) throw new UploadRejectedError();
+  if (attachment.uploadStatus === 'uploaded' && attachment.scanStatus === 'clean') return attachmentDto(attachment);
 
   if (isS3Configured()) {
     const head = await headObject(attachment.storageKey);
@@ -151,9 +153,15 @@ export async function completeUpload(actor: UploadActor, attachmentId: string, c
       throw new UploadRejectedError();
     }
     const scanStatus = await scanQuarantinedObject(bytes);
-    const updated = await db.attachment.update({
-      where: { id: attachment.id },
-      data: { uploadStatus: scanStatus === 'clean' ? 'uploaded' : 'failed', scanStatus },
+    // The signed PUT URL must not be able to overwrite bytes after validation.
+    const storageKey = scanStatus === 'clean' ? `private/${randomUUID()}` : attachment.storageKey;
+    if (scanStatus === 'clean') await storeVerifiedObject(storageKey, bytes, attachment.mediaType);
+    const updated = await db.$transaction(async tx => {
+      const result = await tx.attachment.update({where: { id: attachment.id },data: { storageKey, uploadStatus: scanStatus === 'clean' ? 'uploaded' : 'failed', scanStatus }});
+      if (scanStatus === 'clean' && attachment.purpose === 'tax_certificate' && attachment.organizationId) {
+        await tx.organization.update({where:{id:attachment.organizationId},data:{taxStatus:'pending',revision:{increment:1}}});
+      }
+      return result;
     });
     if (scanStatus !== 'clean') throw new UploadRejectedError();
     return attachmentDto(updated);

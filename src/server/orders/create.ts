@@ -23,11 +23,26 @@ export async function createOrder(actor:Actor,input:CreateOrderInput,key:string)
   const parsed=CreateOrderSchema.safeParse(input); if(!parsed.success||!key.trim()) throw new OrderValidationError();
   const clean=parsed.data; const requestHash=hash(clean);
   const normalized=clean.items.map(item=>{const valid=validateOrderItem(item);if(!valid.success) throw new OrderValidationError();return normalizeOrderItem(valid.data);});
-  return db.$transaction(async tx=>{
+  try { return await db.$transaction(async tx=>{
     const prior=await tx.idempotencyRecord.findUnique({where:{actorId_route_key:{actorId:actor.userId,route:'/api/v1/orders',key}}});
     if(prior){ if(prior.requestHash!==requestHash) throw new IdempotencyConflictError(); const order=await tx.order.findUniqueOrThrow({where:{id:prior.resultResourceId}}); const items=await tx.orderItem.findMany({where:{orderId:order.id},orderBy:{position:'asc'}}); return dto(order,items.map(item=>({...item,productType:item.productType as any,trackSupplied:item.trackSupplied,snapsSuggested:item.snapsSuggested,snapsSource:item.snapsSource as any,ruleVersion:item.ruleVersion}) as any)); }
+    if (clean.draftId) {
+      const draft = await tx.draft.findFirst({where:{id:clean.draftId,userId:actor.userId,organizationId:actor.organizationId,revision:clean.expectedDraftRevision}});
+      if (!draft) throw new IdempotencyConflictError();
+    }
+    if (new Set(clean.attachmentIds).size !== clean.attachmentIds.length) throw new OrderValidationError();
+    const files = await tx.attachment.findMany({where:{id:{in:clean.attachmentIds},organizationId:actor.organizationId,uploadedBy:actor.userId,purpose:'order_photo',orderId:null,uploadStatus:'uploaded',scanStatus:'clean'}});
+    if (files.length !== clean.attachmentIds.length) throw new OrderValidationError();
     const order=await tx.order.create({data:{number:`ORD-${randomUUID()}`,organizationId:actor.organizationId,createdBy:actor.userId,sidemark:clean.sidemark,specialNotes:clean.specialNotes,items:{create:normalized.map((item,position)=>({...item,position,productType:item.productType,productOther:item.productOther??null,roomArea:item.roomArea??null,opening:item.opening??null,track:item.track??null,trackOther:item.trackOther??null,fullness:item.fullness??null,installation:item.installation??null,controlSide:item.controlSide??null,operation:item.operation??null,notes:item.notes??null,snapsManual:item.snapsManual??null,snapsSuggested:item.snapsSuggested??null,snapsSource:item.snapsSource??null}))}}});
+    const linked = await tx.attachment.updateMany({where:{id:{in:clean.attachmentIds},organizationId:actor.organizationId,orderId:null},data:{orderId:order.id}});
+    if (linked.count !== clean.attachmentIds.length) throw new OrderValidationError();
+    if (clean.draftId) {
+      await tx.draftVersion.deleteMany({where:{draftId:clean.draftId}});
+      const removed = await tx.draft.deleteMany({where:{id:clean.draftId,userId:actor.userId,revision:clean.expectedDraftRevision}});
+      if (!removed.count) throw new IdempotencyConflictError();
+    }
     await tx.idempotencyRecord.create({data:{actorId:actor.userId,route:'/api/v1/orders',key,requestHash,resultResourceId:order.id,expiresAt:new Date(Date.now()+24*60*60*1000)}});
     const rows=await tx.orderItem.findMany({where:{orderId:order.id},orderBy:{position:'asc'},select:{id:true}}); return dto(order,normalized.map((item,index)=>({...item,id:rows[index]!.id})));
-  });
+  }, { timeout: 20000 }); }
+  catch (error: any) { if (error.code === 'P2002') throw new IdempotencyConflictError(); throw error; }
 }

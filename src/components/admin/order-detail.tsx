@@ -56,7 +56,7 @@ export function OrderDetail({orderId, api: injectedApi}: {orderId: string;api?: 
       setApi(injectedApi);
       return;
     }
-    const usePreview = new URLSearchParams(window.location.search).get('preview') === 'fixtures';
+    const usePreview = process.env.NODE_ENV !== 'production' && new URLSearchParams(window.location.search).get('preview') === 'fixtures';
     setPreview(usePreview);
     setApi(usePreview ? createFixtureOrderDetailApi() : createOrderDetailApi());
   }, [injectedApi]);

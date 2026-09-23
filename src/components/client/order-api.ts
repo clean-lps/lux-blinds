@@ -3,7 +3,7 @@ import { requestJson, type ClientPage } from './api';
 
 export const orderApi = {
   getDraft() {
-    return requestJson<DraftDTO>('/draft');
+    return requestJson<DraftDTO | null>('/draft');
   },
   saveDraft(input: SaveDraftInput) {
     return requestJson<DraftDTO>('/draft', { method: 'PUT', body: JSON.stringify(input) });

@@ -15,7 +15,7 @@ function clamavScan(bytes: Buffer): Promise<ScanStatus | null> {
   const host = process.env.AV_HOST ?? '127.0.0.1';
   const port = Number(process.env.AV_PORT ?? 3310);
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 8000);
+    const timer = setTimeout(() => { socket.destroy(); resolve(null); }, 8000);
     const socket = connect(port, host, () => {
       socket.write(Buffer.from('zINSTREAM\0'));
       const size = Buffer.alloc(4);
@@ -59,7 +59,7 @@ function clamavScan(bytes: Buffer): Promise<ScanStatus | null> {
 export async function scanQuarantinedObject(bytes: Buffer): Promise<ScanStatus> {
   if (process.env.AV_PROVIDER === 'clamav') {
     const verdict = await clamavScan(bytes);
-    if (verdict) return verdict;
+    return verdict ?? 'rejected';
   }
   return localGate(bytes) ?? 'clean';
 }

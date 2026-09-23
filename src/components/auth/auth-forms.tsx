@@ -234,7 +234,6 @@ export function RegisterForm({ submit = authApi.register }: { submit?: (input: R
     setFieldErrors({});
     const nextErrors: FieldErrors = {};
     if (!values.termsAccepted) nextErrors.termsAccepted = 'You must accept the terms to create an account.';
-    if (values.taxExempt && !values.certificateFile) nextErrors.certificateFile = 'A certificate is required for tax-exempt registration.';
     const { certificateFile: _certificateFile, termsAccepted: _termsAccepted, ...payload } = values;
     const result = RegisterSchema.safeParse(payload);
     if (!result.success) Object.assign(nextErrors, zodFieldErrors(result.error));
@@ -288,15 +287,7 @@ export function RegisterForm({ submit = authApi.register }: { submit?: (input: R
         <input id="taxId" ref={taxIdRef} className={styles.input} value={values.taxId} placeholder="Enter value" onChange={(event) => update('taxId', event.target.value)} autoComplete="off" aria-invalid={Boolean(fieldErrors.taxId)} aria-describedby={fieldErrors.taxId ? 'taxId-error' : undefined} {...taxIdAutofill} />
       </Field>
 
-      <fieldset className={styles.choiceGroup}>
-        <legend className={styles.legend}>Tax exemption</legend>
-        <label className={styles.checkChoice}><input className={styles.checkbox} type="checkbox" checked={values.taxExempt} onChange={(event) => update('taxExempt', event.target.checked)} /> This company is tax exempt.</label>
-        {values.taxExempt ? (
-          <Field id="certificateFile" label="Tax-exempt certificate" error={fieldErrors.certificateFile} hint="PDF, JPG, JPEG or PNG. Private storage connection pending.">
-            <input id="certificateFile" className={styles.file} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={handleCertificate} aria-invalid={Boolean(fieldErrors.certificateFile)} aria-describedby={fieldErrors.certificateFile ? 'certificateFile-error' : undefined} />
-          </Field>
-        ) : null}
-      </fieldset>
+      <p className={styles.info}>Tax exempt? After verifying your account, upload your certificate in My Profile for administrator review.</p>
 
       <div className={styles.twoColumns}>
         <PasswordField id="registerPassword" label="Password" value={values.password} onChange={(password) => update('password', password)} error={fieldErrors.password} autoComplete="new-password" />

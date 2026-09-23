@@ -30,6 +30,8 @@ export function OrderHistory({ orders: initialOrders }: { orders: ClientOrderDTO
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [applied, setApplied] = useState({ query: '', status: '' as OrderStatus | '' });
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   useEffect(() => {
     const initial = readUrlFilters();
@@ -40,18 +42,20 @@ export function OrderHistory({ orders: initialOrders }: { orders: ClientOrderDTO
 
   useEffect(() => {
     let active = true;
-    getOrders({ q: applied.query || undefined, status: applied.status || undefined, limit: 50 }).then((page) => {
+    setDataMode('loading');
+    getOrders({ q: applied.query || undefined, status: applied.status || undefined, cursor: cursor ?? undefined, limit: 50 }).then((page) => {
       if (!active) return;
       setOrders(page.data);
+      setNextCursor(page.page.nextCursor);
       setDataMode('live');
       setLoadError(null);
     }).catch((error) => {
       if (!active) return;
-      setDataMode('preview');
+      setDataMode('error');
       setLoadError(apiErrorMessage(error));
     });
     return () => { active = false; };
-  }, [applied]);
+  }, [applied, cursor]);
 
   const filtered = useMemo(() => filterOrders(orders, applied.query, applied.status), [orders, applied]);
 
@@ -59,12 +63,13 @@ export function OrderHistory({ orders: initialOrders }: { orders: ClientOrderDTO
     event.preventDefault();
     const next = { query: query.trim(), status };
     setApplied(next);
+    setCursor(null);
     window.history.replaceState(null, '', `/order-history${buildQuery({ q: next.query || undefined, status: next.status || undefined })}`);
   }
 
   return (
     <ClientShell title="Order History" description="View, search and track your submitted orders." active="history" dataMode={dataMode}>
-      {loadError ? <div className={styles.info} role="status"><p>Showing shared presentation orders until an authenticated backend session is available. {loadError}</p></div> : null}
+      {loadError ? <div className={styles.error} role="alert"><p>{loadError}</p><button type="button" onClick={() => setApplied({ ...applied })}>Retry</button></div> : null}
 
       <section className={styles.surface}>
         <div className={styles.surfaceHeader}>
@@ -94,7 +99,7 @@ export function OrderHistory({ orders: initialOrders }: { orders: ClientOrderDTO
           {historyStatuses.map((option) => <StatusPill key={option} status={option} />)}
         </div>
 
-        {filtered.length ? (
+        {dataMode === 'loading' ? <p role="status">Loading orders…</p> : dataMode === 'error' ? null : filtered.length ? (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
@@ -129,7 +134,10 @@ export function OrderHistory({ orders: initialOrders }: { orders: ClientOrderDTO
           </div>
         )}
 
-        <p className={styles.sourceNote}>{dataMode === 'live' ? 'Filters are reflected in the URL and loaded from GET /api/v1/orders.' : 'Filters are reflected in the URL; presentation data remains synthetic while the backend session is unavailable.'}</p>
+        <div className={styles.buttonRow}>
+          {cursor ? <button type="button" className={styles.buttonSecondary} disabled={dataMode === 'loading'} onClick={() => setCursor(null)}>First page</button> : null}
+          {nextCursor ? <button type="button" className={styles.buttonSecondary} disabled={dataMode === 'loading'} onClick={() => setCursor(nextCursor)}>Next page</button> : null}
+        </div>
       </section>
     </ClientShell>
   );

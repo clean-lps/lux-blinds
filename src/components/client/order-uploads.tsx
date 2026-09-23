@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ChangeEvent } from 'react';
+import { useState, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
 import type { UploadIntentDTO } from '@/contracts';
 import { apiErrorMessage } from './api';
 import { orderApi } from './order-api';
@@ -14,11 +14,11 @@ async function sha256Hex(file: File): Promise<string> {
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function OrderUploads({ value, onChange, requiresReselection = false }: { value: PendingUpload[]; onChange: (files: PendingUpload[]) => void; requiresReselection?: boolean }) {
+export function OrderUploads({ value, onChange, requiresReselection = false }: { value: PendingUpload[]; onChange: Dispatch<SetStateAction<PendingUpload[]>>; requiresReselection?: boolean }) {
   const [error, setError] = useState<string | null>(null);
 
   async function handleUpload(entry: PendingUpload) {
-    onChange(value.map((f) => f.id === entry.id ? { ...f, status: 'uploading', progress: 50 } : f));
+    onChange(current => current.map((f) => f.id === entry.id ? { ...f, status: 'uploading', progress: 50 } : f));
     try {
       const sha256 = await sha256Hex(entry.file);
       const intent = await orderApi.createUploadIntent({
@@ -31,9 +31,9 @@ export function OrderUploads({ value, onChange, requiresReselection = false }: {
       const response = await fetch(intent.url, { method: intent.method, headers: intent.headers, body: entry.file });
       if (!response.ok) throw new Error(`Upload failed (${response.status})`);
       await orderApi.completeUpload(intent.attachmentId, sha256);
-      onChange(value.map((f) => f.id === entry.id ? { ...f, status: 'uploaded', progress: 100, intent } : f));
+      onChange(current => current.map((f) => f.id === entry.id ? { ...f, status: 'uploaded', progress: 100, intent } : f));
     } catch (uploadError) {
-      onChange(value.map((f) => f.id === entry.id ? { ...f, status: 'failed', error: apiErrorMessage(uploadError) } : f));
+      onChange(current => current.map((f) => f.id === entry.id ? { ...f, status: 'failed', error: apiErrorMessage(uploadError) } : f));
     }
   }
 
@@ -44,8 +44,9 @@ export function OrderUploads({ value, onChange, requiresReselection = false }: {
       setError('You can attach up to 20 photos to one order.');
       return;
     }
-    const next = selected.map((file, index) => ({ id: `${file.name}-${file.lastModified}-${index}`, file, progress: 0, status: 'selected' as const }));
-    onChange([...value, ...next]);
+    if (selected.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10_000_000 || file.size === 0)) { setError('Choose JPG, PNG or WebP photos up to 10 MB each.'); return; }
+    const next = selected.map(file => ({ id: crypto.randomUUID(), file, progress: 0, status: 'selected' as const }));
+    onChange(current => [...current, ...next]);
     event.target.value = '';
   }
 
@@ -64,8 +65,8 @@ export function OrderUploads({ value, onChange, requiresReselection = false }: {
                 <p className={styles.listItemMeta}>{Math.ceil(entry.file.size / 1024)} KB · {entry.status === 'uploaded' ? 'Uploaded' : entry.status === 'uploading' ? 'Uploading…' : entry.status === 'failed' ? `Failed: ${entry.error ?? 'Unknown error'}` : 'Ready to upload'}</p>
               </div>
               <div className={styles.buttonRow}>
-                {entry.status === 'selected' ? <button className={styles.buttonSecondary} type="button" onClick={() => handleUpload(entry)}>Upload</button> : null}
-                <button className={styles.buttonSecondary} type="button" onClick={() => onChange(value.filter((file) => file.id !== entry.id))}>Remove</button>
+                {entry.status === 'selected' || entry.status === 'failed' ? <button className={styles.buttonSecondary} type="button" onClick={() => handleUpload(entry)}>{entry.status === 'failed' ? 'Retry' : 'Upload'}</button> : null}
+                <button className={styles.buttonSecondary} type="button" disabled={entry.status === 'uploading'} onClick={() => onChange(current => current.filter((file) => file.id !== entry.id))}>Remove</button>
               </div>
             </li>
           ))}
