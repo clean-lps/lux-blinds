@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { AttachmentDTO, OrderItemInput } from '@/contracts';
 import { formatEighths } from './client-shell';
 import styles from './client-ui.module.css';
@@ -18,9 +19,9 @@ export function OrderReview({ open, sidemark, items, notes, attachments, error, 
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose, submitting]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
   const totalQuantity = items.reduce((total, entry) => total + entry.item.quantity, 0);
-  return (
+  return createPortal(
     <div className={styles.reviewBackdrop} role="presentation">
       <section className={styles.review} role="dialog" aria-modal="true" aria-labelledby="order-review-title">
         <header className={styles.reviewHeader}>
@@ -39,6 +40,7 @@ export function OrderReview({ open, sidemark, items, notes, attachments, error, 
           <button className={styles.button} type="button" disabled={submitting || !items.length || !sidemark.trim()} onClick={onSubmit}>{submitting ? 'Submitting…' : 'Submit order'}</button>
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
