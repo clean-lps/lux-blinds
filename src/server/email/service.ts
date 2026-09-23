@@ -1,4 +1,27 @@
 import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
+import { emailProvider } from './provider';
+
+export class EmailDeliveryError extends Error {}
+
+async function sendGmail(to: string, subject: string, html: string): Promise<SendEmailResult> {
+  const user = process.env.GMAIL_USER?.trim();
+  const pass = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '');
+  if (!user || !pass) throw new EmailDeliveryError('Email provider is not configured');
+  const transport = nodemailer.createTransport({
+    host: 'smtp.gmail.com', port: 465, secure: true,
+    auth: { user, pass },
+    connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
+    tls: { minVersion: 'TLSv1.2' },
+  });
+  try {
+    const result = await transport.sendMail({ from: { name: 'LUX Blinds', address: user }, to, subject, html });
+    if (!result.accepted?.length || result.rejected?.length) throw new Error('Recipient rejected');
+    return { id: result.messageId, provider: 'gmail' };
+  } catch {
+    throw new EmailDeliveryError('Email delivery failed. Please retry.');
+  }
+}
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const fromAddress = process.env.RESEND_EMAIL_FROM ?? 'LUX Blinds <onboarding@resend.dev>';
@@ -14,7 +37,7 @@ function getClient(): Resend {
 
 export interface SendEmailResult {
   id: string;
-  provider: 'resend' | 'mock';
+  provider: 'resend' | 'gmail' | 'mock';
 }
 
 export async function sendVerificationEmail(
@@ -28,7 +51,15 @@ export async function sendVerificationEmail(
 
   const html = buildVerificationHtml(code, type);
 
-  if (resendApiKey) {
+  return sendTransactionalEmail(to, subject, html);
+}
+
+export async function sendTransactionalEmail(to: string, subject: string, html: string): Promise<SendEmailResult> {
+  const provider = emailProvider();
+  if (provider === 'gmail') return sendGmail(to, subject, html);
+  if (provider !== 'resend' && provider !== 'mock') throw new EmailDeliveryError('Email provider is not configured');
+
+  if (provider === 'resend' && resendApiKey) {
     try {
       const client = getClient();
       const result = await client.emails.send({
@@ -38,32 +69,13 @@ export async function sendVerificationEmail(
         html,
       });
       if (result.error || !result.data?.id) throw new Error('Email provider rejected delivery');
-      console.log(`[EMAIL] Sent ${type} code to ${to} via Resend (id: ${result.data?.id})`);
       return { id: result.data?.id ?? 'unknown', provider: 'resend' };
     } catch (err) {
-      throw new Error('Email delivery failed. Please retry.');
+      throw new EmailDeliveryError('Email delivery failed. Please retry.');
     }
   }
 
-  if (process.env.NODE_ENV === 'production') throw new Error('Email provider is not configured');
-  console.log(`[EMAIL:MOCK] ${type} code for ${to}: ${code}`);
-  return { id: `mock-${Date.now()}`, provider: 'mock' };
-}
-
-export async function sendTransactionalEmail(to: string, subject: string, html: string): Promise<SendEmailResult> {
-  if (resendApiKey) {
-    try {
-      const client = getClient();
-      const result = await client.emails.send({ from: fromAddress, to: [to], subject, html });
-      if (result.error || !result.data?.id) throw new Error('Email provider rejected delivery');
-      console.log(`[EMAIL] Sent "${subject}" to ${to} via Resend (id: ${result.data?.id})`);
-      return { id: result.data?.id ?? 'unknown', provider: 'resend' };
-    } catch (err) {
-      throw new Error('Email delivery failed. Please retry.');
-    }
-  }
-
-  if (process.env.NODE_ENV === 'production') throw new Error('Email provider is not configured');
+  if (process.env.NODE_ENV === 'production' || provider !== 'mock') throw new EmailDeliveryError('Email provider is not configured');
   console.log(`[EMAIL:MOCK] "${subject}" for ${to}: ${html.slice(0, 160)}`);
   return { id: `mock-${Date.now()}`, provider: 'mock' };
 }
@@ -95,5 +107,5 @@ function buildVerificationHtml(code: string, type: 'registration' | 'password-re
 }
 
 export function isMockProvider(): boolean {
-  return !resendApiKey;
+  return emailProvider() === 'mock' && process.env.NODE_ENV !== 'production';
 }

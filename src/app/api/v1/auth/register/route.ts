@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { registerPendingUser, RegistrationError, ChallengeRateLimitError } from '@/server/auth/registration';
 import type { ApiError } from '@/contracts/api';
+import { EmailDeliveryError } from '@/server/email/service';
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -9,6 +10,12 @@ export async function POST(request: Request) {
     const challenge = await registerPendingUser(body);
     return NextResponse.json({ data: challenge, requestId }, { status: 201 });
   } catch (error) {
+    if (error instanceof EmailDeliveryError) {
+      return NextResponse.json(
+        { error: { code: 'EMAIL_DELIVERY_FAILED', message: 'We could not send your verification email. Please try again in a minute or contact support.', retryable: true }, requestId },
+        { status: 503 },
+      );
+    }
     if (error instanceof ChallengeRateLimitError) {
       return NextResponse.json(
         { error: { code: 'RATE_LIMITED', message: error.message, retryable: true }, requestId },
