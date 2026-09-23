@@ -4,11 +4,20 @@ import { db } from '@/server/db';
 import { auth } from '@/server/auth/session';
 import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
 import { sendVerificationEmail, isMockProvider } from '@/server/email/service';
-import { sendVerificationSms, isSmsMockProvider } from '@/server/sms/service';
 
 const CODE_LENGTH = 6;
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const RESEND_COOLDOWN_MS = 60 * 1000; // 1 minute
+const MAX_CODE_ATTEMPTS = 5;
+
+type PendingRegistration = {
+  codeHash: string;
+  passwordEnc?: string;
+  password?: string;
+  registrationData: any;
+  attempts?: number;
+  resendAfter?: string;
+};
 
 function generateCode(): string {
   let code = '';
@@ -55,11 +64,6 @@ function maskDestination(email: string): string {
   return `${local[0]}${'*'.repeat(local.length - 2)}${local[local.length - 1]}@${domain}`;
 }
 
-function maskPhone(phone: string): string {
-  if (phone.length <= 4) return '*'.repeat(phone.length);
-  return '*'.repeat(phone.length - 4) + phone.slice(-4);
-}
-
 export class RegistrationError extends Error {
   readonly status = 422;
   readonly fieldErrors?: Record<string, string[]>;
@@ -97,6 +101,29 @@ export class CodeUsedError extends Error {
   }
 }
 
+export class ChallengeRateLimitError extends Error {
+  readonly status = 429;
+  constructor(message = 'Please wait before trying again') {
+    super(message);
+  }
+}
+
+function parsePendingRegistration(value: string): PendingRegistration {
+  try {
+    const parsed = JSON.parse(value) as PendingRegistration;
+    if (!parsed?.codeHash || !parsed?.registrationData || (!parsed.passwordEnc && !parsed.password)) {
+      throw new Error('incomplete');
+    }
+    return parsed;
+  } catch {
+    throw new RegistrationError('Verification data is outdated. Please register again.');
+  }
+}
+
+function isCoolingDown(value: PendingRegistration, now = new Date()): boolean {
+  return !!value.resendAfter && new Date(value.resendAfter) > now;
+}
+
 export async function registerPendingUser(input: unknown): Promise<ChallengeDTO> {
   const parsed = RegisterSchema.safeParse(input);
   if (!parsed.success) {
@@ -119,6 +146,13 @@ export async function registerPendingUser(input: unknown): Promise<ChallengeDTO>
   const code = generateCode();
   const identifier = `register:${data.email.toLowerCase()}`;
   const expiresAt = new Date(Date.now() + CODE_TTL_MS);
+  const resendAfter = new Date(Date.now() + RESEND_COOLDOWN_MS);
+
+  const existingChallenge = await db.verification.findFirst({ where: { identifier } });
+  if (existingChallenge && existingChallenge.expiresAt > new Date()) {
+    const existingValue = parsePendingRegistration(existingChallenge.value);
+    if (isCoolingDown(existingValue)) throw new ChallengeRateLimitError();
+  }
 
   const registrationData = {
     email: data.email,
@@ -129,14 +163,16 @@ export async function registerPendingUser(input: unknown): Promise<ChallengeDTO>
     taxExempt: data.taxExempt,
     certificateId: data.certificateId,
     termsVersion: data.termsVersion,
-    verificationMethod: data.verificationMethod,
-    smsConsent: data.smsConsent,
+    verificationMethod: 'email',
+    smsConsent: false,
   };
 
   const value = JSON.stringify({
     codeHash: hashValue(code),
     passwordEnc: await sealPassword(data.password),
     registrationData,
+    attempts: 0,
+    resendAfter: resendAfter.toISOString(),
   });
 
   await db.verification.deleteMany({ where: { identifier } });
@@ -149,23 +185,17 @@ export async function registerPendingUser(input: unknown): Promise<ChallengeDTO>
     },
   });
 
-  if (data.verificationMethod === 'sms') {
-    await sendVerificationSms(data.phone, code);
-  } else {
-    await sendVerificationEmail(data.email, code, 'registration');
-  }
+  await sendVerificationEmail(data.email, code, 'registration');
 
-  const masked = data.verificationMethod === 'sms'
-    ? maskPhone(data.phone)
-    : maskDestination(data.email);
+  const masked = maskDestination(data.email);
 
   const result: ChallengeDTO = {
     challengeId: identifier,
     expiresAt: expiresAt.toISOString(),
-    resendAfter: new Date(Date.now() + RESEND_COOLDOWN_MS).toISOString(),
+    resendAfter: resendAfter.toISOString(),
     maskedDestination: masked,
   };
-  if (isMockProvider() || (data.verificationMethod === 'sms' && isSmsMockProvider())) {
+  if (isMockProvider()) {
     result.devCode = code;
   }
   return result;
@@ -186,16 +216,7 @@ export async function verifyChallenge(input: unknown): Promise<SafeUser> {
   if (!verification) throw new ChallengeNotFoundError();
   if (verification.expiresAt < new Date()) throw new ChallengeExpiredError();
 
-  let parsedValue: { codeHash: string; passwordEnc?: string; password?: string; registrationData: any } | null = null;
-  try {
-    parsedValue = JSON.parse(verification.value);
-  } catch {
-    throw new RegistrationError('Verification data is outdated. Please register again.');
-  }
-
-  if (!parsedValue?.codeHash || !parsedValue?.registrationData) {
-    throw new RegistrationError('Verification data is incomplete. Please register again.');
-  }
+  const parsedValue = parsePendingRegistration(verification.value);
 
   const { codeHash, registrationData } = parsedValue;
   // Backward compatibility: challenges created before encryption stored `password` in clear.
@@ -204,7 +225,16 @@ export async function verifyChallenge(input: unknown): Promise<SafeUser> {
     throw new RegistrationError('Verification data is incomplete. Please register again.');
   }
 
-  if (hashValue(code) !== codeHash) throw new CodeInvalidError();
+  if ((parsedValue.attempts ?? 0) >= MAX_CODE_ATTEMPTS) {
+    throw new ChallengeRateLimitError('Too many invalid verification attempts. Please request a new code.');
+  }
+  if (hashValue(code) !== codeHash) {
+    await db.verification.update({
+      where: { id: verification.id },
+      data: { value: JSON.stringify({ ...parsedValue, attempts: (parsedValue.attempts ?? 0) + 1 }) },
+    });
+    throw new CodeInvalidError();
+  }
 
   const email = registrationData.email.toLowerCase();
 
@@ -274,7 +304,7 @@ export async function verifyChallenge(input: unknown): Promise<SafeUser> {
       crypto.randomUUID(), userId, orgId
     );
   } catch (postError: any) {
-    console.error('[VERIFY ERROR DETAILED]', postError?.message ?? postError, postError?.stack);
+    console.error('[VERIFY ERROR] account setup failed');
     // Never report success when org/membership are missing: the account would be
     // unable to pass requireActor. Compensate and surface a retryable error.
     try {
@@ -302,25 +332,20 @@ export async function resendChallenge(identifier: string): Promise<ChallengeDTO>
   if (!verification) throw new ChallengeNotFoundError();
 
   // Preserve whichever credential envelope the challenge was created with.
-  let parsedValue: { codeHash: string; passwordEnc?: string; password?: string; registrationData: any } | null = null;
-  try {
-    parsedValue = JSON.parse(verification.value);
-  } catch {
-    throw new RegistrationError('Verification data is outdated. Please register again.');
-  }
-
-  if (!parsedValue?.codeHash || !parsedValue?.registrationData || (!parsedValue.passwordEnc && !parsedValue.password)) {
-    throw new RegistrationError('Verification data is incomplete. Please register again.');
-  }
+  const parsedValue = parsePendingRegistration(verification.value);
+  if (isCoolingDown(parsedValue)) throw new ChallengeRateLimitError();
 
   const { registrationData } = parsedValue;
   const newCode = generateCode();
   const newExpiresAt = new Date(Date.now() + CODE_TTL_MS);
+  const resendAfter = new Date(Date.now() + RESEND_COOLDOWN_MS);
 
   const newValue = JSON.stringify({
     codeHash: hashValue(newCode),
     ...(parsedValue.passwordEnc ? { passwordEnc: parsedValue.passwordEnc } : { password: parsedValue.password }),
     registrationData,
+    attempts: 0,
+    resendAfter: resendAfter.toISOString(),
   });
 
   await db.verification.update({
@@ -333,19 +358,15 @@ export async function resendChallenge(identifier: string): Promise<ChallengeDTO>
 
   const email = registrationData.email;
 
-  if (registrationData.verificationMethod === 'sms') {
-    await sendVerificationSms(registrationData.phone, newCode);
-  } else {
-    await sendVerificationEmail(email, newCode, 'registration');
-  }
+  await sendVerificationEmail(email, newCode, 'registration');
 
 const result: ChallengeDTO = {
       challengeId: identifier,
       expiresAt: newExpiresAt.toISOString(),
-      resendAfter: new Date(Date.now() + RESEND_COOLDOWN_MS).toISOString(),
+      resendAfter: resendAfter.toISOString(),
       maskedDestination: maskDestination(registrationData.email),
    };
-   if (isMockProvider() || (registrationData.verificationMethod === 'sms' && isSmsMockProvider())) {
+   if (isMockProvider()) {
       result.devCode = newCode;
    }
    return result;

@@ -4,7 +4,7 @@ import { db } from '@/server/db';
 import { hashPassword } from 'better-auth/crypto';
 import { sendVerificationEmail } from '@/server/email/service';
 
-const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');

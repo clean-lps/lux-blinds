@@ -15,6 +15,7 @@ import {
   type SafeUser,
 } from '@/contracts';
 import { authApi, getAuthErrorMessage, getAuthFieldErrors } from './api';
+import { postVerificationPath } from './redirects';
 import styles from './auth-forms.module.css';
 
 type SubmitState = 'idle' | 'pending' | 'success' | 'error';
@@ -155,7 +156,9 @@ export function LoginForm({ submit = authApi.login }: { submit?: (input: LoginIn
     try {
       const user = await submit(result.data);
       setState('success');
-      router.push(user.role === 'admin' ? '/admin-orders' : '/my-panel');
+      // Force a document navigation so the freshly-issued auth cookie is sent
+      // through the proxy before rendering the protected panel.
+      window.location.assign(user.role === 'admin' ? '/admin-orders' : '/my-panel');
     } catch (error) {
       setState('error');
       setMessage(getAuthErrorMessage(error));
@@ -278,17 +281,7 @@ export function RegisterForm({ submit = authApi.register }: { submit?: (input: R
 
       <fieldset className={styles.choiceGroup}>
         <legend className={styles.legend}>Verification method</legend>
-        <div className={styles.choiceRow}>
-          <label className={styles.choice}><input className={styles.radio} type="radio" name="verificationMethod" value="email" checked={values.verificationMethod === 'email'} onChange={() => update('verificationMethod', 'email')} /> Email</label>
-          <label className={styles.choice}><input className={styles.radio} type="radio" name="verificationMethod" value="sms" checked={values.verificationMethod === 'sms'} onChange={() => update('verificationMethod', 'sms')} /> Text Message (SMS)</label>
-        </div>
-        {values.verificationMethod === 'sms' ? (
-          <label className={styles.checkChoice}>
-            <input className={styles.checkbox} type="checkbox" checked={values.smsConsent} onChange={(event) => update('smsConsent', event.target.checked)} aria-invalid={Boolean(fieldErrors.smsConsent)} />
-            I agree to receive the verification code by SMS.
-          </label>
-        ) : null}
-        {fieldErrors.smsConsent ? <p className={styles.fieldMessage}>{fieldErrors.smsConsent}</p> : null}
+        <p className={styles.info}>We will send a verification code to your email address.</p>
       </fieldset>
 
       <Field id="taxId" label="Company Tax ID (optional)" error={fieldErrors.taxId}>
@@ -349,9 +342,9 @@ export function VerificationForm({ challengeId = '', maskedDestination = 'your s
     }
     setState('pending');
     try {
-      const user = await verify(result.data);
+      await verify(result.data);
       setState('success');
-      setTimeout(() => router.push(user.role === 'admin' ? '/admin-orders' : '/my-panel'), 1200);
+      setTimeout(() => router.push(postVerificationPath()), 1200);
     } catch (error) {
       setState('idle');
       setMessage(getAuthErrorMessage(error));
@@ -389,7 +382,7 @@ export function VerificationForm({ challengeId = '', maskedDestination = 'your s
       <div className={styles.buttonRow}>
         <button type="button" className={styles.buttonSecondary} disabled={!challengeId || cooldown > 0 || isLoading || isSuccess} onClick={handleResend}>{cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}</button>
       </div>
-      {isSuccess && !message ? <div className={styles.success} role="status"><p>Verification complete. Opening your dashboard…</p></div> : null}
+      {isSuccess && !message ? <div className={styles.success} role="status"><p>Verification complete. Opening sign in…</p></div> : null}
     </form>
   );
 }

@@ -2,17 +2,20 @@ import { S3Client, HeadObjectCommand, GetObjectCommand, PutObjectCommand } from 
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const bucket = process.env.STORAGE_BUCKET;
-const region = process.env.STORAGE_REGION ?? 'us-east-1';
-const endpoint = process.env.STORAGE_ENDPOINT || undefined;
+const isNeonStorage = process.env.STORAGE_PROVIDER === 'neon';
+const region = process.env.STORAGE_REGION ?? (isNeonStorage ? 'us-east-2' : process.env.AWS_REGION ?? 'us-east-1');
+const endpoint = process.env.STORAGE_ENDPOINT || process.env.AWS_ENDPOINT_URL_S3 || undefined;
+const accessKeyId = process.env.STORAGE_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+const secretAccessKey = process.env.STORAGE_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
 
 let client: S3Client | null = null;
 
 export function isS3Configured(): boolean {
   return (
-    process.env.STORAGE_PROVIDER === 's3' &&
+    (process.env.STORAGE_PROVIDER === 's3' || isNeonStorage) &&
     !!bucket &&
-    !!process.env.STORAGE_ACCESS_KEY_ID &&
-    !!process.env.STORAGE_SECRET_ACCESS_KEY
+    !!accessKeyId &&
+    !!secretAccessKey
   );
 }
 
@@ -23,8 +26,8 @@ function getClient(): S3Client {
       endpoint,
       forcePathStyle: !!endpoint,
       credentials: {
-        accessKeyId: process.env.STORAGE_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY!,
+        accessKeyId: accessKeyId!,
+        secretAccessKey: secretAccessKey!,
       },
     });
   }

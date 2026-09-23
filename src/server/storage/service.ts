@@ -34,6 +34,14 @@ export class AttachmentForbiddenError extends Error {
   }
 }
 
+/** A serverless deployment cannot use the in-memory local-test adapter. */
+export class StorageUnavailableError extends Error {
+  readonly status = 503;
+  constructor() {
+    super('Private object storage is not configured');
+  }
+}
+
 function isActor(actor: UploadActor): actor is Actor {
   return 'userId' in actor;
 }
@@ -90,6 +98,9 @@ export async function createUploadIntent(actor: UploadActor, input: UploadIntent
   if (!parsed.success) throw new UploadRejectedError();
   const cleanInput = parsed.data;
   validatePurpose(actor, cleanInput);
+  if (process.env.NODE_ENV === 'production' && !isS3Configured()) {
+    throw new StorageUnavailableError();
+  }
   if (cleanInput.resourceId && isActor(actor)) {
     const order = await db.order.findFirst({ where: { id: cleanInput.resourceId, organizationId: actor.organizationId }, select: { id: true } });
     if (!order) throw new AttachmentNotFoundError();

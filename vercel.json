@@ -1,23 +1,7 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then npx prisma migrate deploy && npm run db:seed; fi && npm run build",
   "outputDirectory": ".next",
   "framework": "nextjs",
   "installCommand": "npm install",
-  "env": {
-    "DATABASE_URL": "@database-url",
-    "BETTER_AUTH_URL": "@better-auth-url",
-    "APP_ORIGIN": "@app-origin",
-    "BETTER_AUTH_SECRET": "@better-auth-secret"
-  },
-  "regions": ["iad1"],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Idempotency-Key" }
-      ]
-    }
-  ]
+  "regions": ["iad1"]
 }

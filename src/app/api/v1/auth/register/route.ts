@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server';
-import { registerPendingUser, RegistrationError } from '@/server/auth/registration';
+import { registerPendingUser, RegistrationError, ChallengeRateLimitError } from '@/server/auth/registration';
 import type { ApiError } from '@/contracts/api';
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   try {
-    const raw = await request.text();
-    console.log('[REGISTER] Raw body:', raw);
-    const body = raw ? JSON.parse(raw) : {};
+    const body = await request.json().catch(() => ({}));
     const challenge = await registerPendingUser(body);
     return NextResponse.json({ data: challenge, requestId }, { status: 201 });
   } catch (error) {
-    console.error('[REGISTER ERROR]', error);
+    if (error instanceof ChallengeRateLimitError) {
+      return NextResponse.json(
+        { error: { code: 'RATE_LIMITED', message: error.message, retryable: true }, requestId },
+        { status: error.status },
+      );
+    }
     if (error instanceof RegistrationError) {
       const response: ApiError = {
         error: {

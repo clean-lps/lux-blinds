@@ -45,7 +45,7 @@ export type OrderDetailApi = {
 
 export function createOrderDetailApi(fetcher: Fetcher = fetch): OrderDetailApi {
   return {
-    getOrder: (id) => requestJson<ApiResponse<AdminOrderDTO>>(fetcher, `/api/v1/orders/${encodeURIComponent(id)}`),
+    getOrder: (id) => requestJson<ApiResponse<AdminOrderDTO>>(fetcher, `/api/v1/admin/orders/${encodeURIComponent(id)}`),
     correctOrder: (id, input) => requestJson<ApiResponse<AdminOrderDTO>>(fetcher, `/api/v1/admin/orders/${encodeURIComponent(id)}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(input)}),
     changeStatus: (id, input) => requestJson<ApiResponse<AdminOrderDTO>>(fetcher, `/api/v1/admin/orders/${encodeURIComponent(id)}/status`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(input)}),
     addNote: (id, text) => requestJson<ApiResponse<InternalNoteDTO>>(fetcher, `/api/v1/admin/orders/${encodeURIComponent(id)}/notes`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text})}),

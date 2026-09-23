@@ -64,7 +64,7 @@ export type ApiResponse<T> = {data: T;requestId: string};
 
 export function createAdminApi(fetcher: Fetcher = fetch): AdminApi {
   return {
-    listOrders: (query = {}) => requestJson<CursorPage<AdminOrderDTO>>(fetcher, `/api/v1/orders${queryString(query)}`),
+    listOrders: (query = {}) => requestJson<CursorPage<AdminOrderDTO>>(fetcher, `/api/v1/admin/orders${queryString(query)}`),
     listCustomers: (query = {}) => requestJson<CursorPage<AdminCustomerDTO>>(fetcher, `/api/v1/admin/customers${queryString(query)}`),
     getCustomer: (id) => requestJson<ApiResponse<AdminCustomerDTO>>(fetcher, `/api/v1/admin/customers/${encodeURIComponent(id)}`),
     reviewTax: (id, input) => requestJson<ApiResponse<AdminCustomerDTO>>(fetcher, `/api/v1/admin/customers/${encodeURIComponent(id)}/tax-review`, {method: 'POST',headers: {'Content-Type': 'application/json'},body: JSON.stringify(input)}),

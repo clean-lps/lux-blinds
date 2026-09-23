@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { resendChallenge, ChallengeNotFoundError } from '@/server/auth/registration';
+import { resendChallenge, ChallengeNotFoundError, ChallengeRateLimitError } from '@/server/auth/registration';
 import type { ApiError } from '@/contracts/api';
 
 export async function POST(request: Request) {
@@ -16,6 +16,12 @@ export async function POST(request: Request) {
     const challenge = await resendChallenge(identifier);
     return NextResponse.json({ data: challenge, requestId });
   } catch (error) {
+    if (error instanceof ChallengeRateLimitError) {
+      return NextResponse.json(
+        { error: { code: 'RATE_LIMITED', message: error.message, retryable: true }, requestId },
+        { status: error.status },
+      );
+    }
     if (error instanceof ChallengeNotFoundError) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: error.message, retryable: false }, requestId },

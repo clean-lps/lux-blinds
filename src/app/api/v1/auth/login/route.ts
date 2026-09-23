@@ -21,6 +21,14 @@ function safeUser(user: { id: string; email: string; name: string; emailVerified
   return { id: user.id, email: user.email, name: user.name, role: role.data, verified: user.emailVerified };
 }
 
+function isDatabaseUnavailable(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
+  if (code === 'P1001' || code === 'P2021' || code === 'P2022') return true;
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : '';
+  return message.includes('Error connecting to database') || message.includes('Can\'t reach database server') || message.includes('does not exist');
+}
+
 export async function POST(request: Request): Promise<NextResponse<ApiResponse<SafeUser> | ApiError>> {
   const id = requestId(request);
   const payload = await request.json().catch(() => undefined);
@@ -59,8 +67,12 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<S
 
     return response;
   } catch (error: any) {
-    console.error('[LOGIN ERROR]', error?.message ?? error);
-    console.error('[LOGIN ERROR FULL]', JSON.stringify(error, null, 2));
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json({
+        error: { code: 'DATABASE_UNAVAILABLE', message: 'Authentication service is temporarily unavailable', retryable: true },
+        requestId: id,
+      }, { status: 503 });
+    }
     return NextResponse.json({
       error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials', retryable: false },
       requestId: id,

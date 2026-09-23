@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyChallenge, ChallengeNotFoundError, ChallengeExpiredError, CodeInvalidError, CodeUsedError, RegistrationError } from '@/server/auth/registration';
+import { verifyChallenge, ChallengeNotFoundError, ChallengeExpiredError, CodeInvalidError, CodeUsedError, ChallengeRateLimitError, RegistrationError } from '@/server/auth/registration';
 import type { ApiError } from '@/contracts/api';
 
 export async function POST(request: Request) {
@@ -25,6 +25,12 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: { code: 'INVALID_CODE', message: error.message, retryable: false }, requestId },
         { status: 422 }
+      );
+    }
+    if (error instanceof ChallengeRateLimitError) {
+      return NextResponse.json(
+        { error: { code: 'RATE_LIMITED', message: error.message, retryable: true }, requestId },
+        { status: error.status },
       );
     }
     if (error instanceof RegistrationError) {

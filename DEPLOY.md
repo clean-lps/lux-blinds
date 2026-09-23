@@ -1,141 +1,100 @@
-# Deploy LUX Blinds - Demo Online
+# Despliegue de producción — LUX Blinds
 
-## Arquitectura de Producción
+La aplicación se publica en Vercel y usa Neon para PostgreSQL y el almacenamiento privado. No se incluyen usuarios, pedidos ni contraseñas demo en producción.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     VERCEL                               │
-├─────────────────────────────────────────────────────────┤
-│  lux-blinds.vercel.app          → Portal Cliente        │
-│  lux-blinds.vercel.app/admin    → Admin Panel           │
-│  lux-blinds.vercel.app/api/*    → Backend API           │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                  NEON POSTGRESQL                         │
-│              (Free tier - 0.5 GB)                        │
-└─────────────────────────────────────────────────────────┘
-```
+## 1. Antes de publicar
 
-## Paso 1: Neon (Base de Datos)
+1. Rota la contraseña de Neon si alguna vez fue compartida fuera de Neon.
+2. Define una contraseña larga y única para el administrador inicial (mínimo 12 caracteres).
+3. Verifica localmente:
 
-1. Ir a **https://neon.tech** → Sign up con GitHub
-2. Crear proyecto:
-   - Nombre: `lux-blinds`
-   - Region: **US East (Ohio)**
-   - PostgreSQL: **16**
-3. Copiar la **Connection string**:
-   ```
-   postgresql://neondb_owner:xxx@ep-xxx.us-east-2.aws.neon.tech/luxblinds?sslmode=require
-   ```
-4. Guardar en lugar seguro
-
-## Paso 2: GitHub
-
-1. Push del código a un repo en GitHub
-2. Asegurar que `worker/backend`, `worker/client`, `worker/admin` están mergeados en `main`
-
-## Paso 3: Vercel (Frontend + API)
-
-1. Ir a **https://vercel.com** → Sign up con GitHub
-2. Click **"Add New Project"**
-3. Seleccionar el repo `lux-blinds`
-4. Configurar:
-
-   **Root Directory:** `.` (raíz del proyecto)
-
-   **Build Command:** `npm run build`
-
-   **Output Directory:** `.next`
-
-5. **Environment Variables** (copiar exactamente):
-
-   ```
-   DATABASE_URL = postgresql://neondb_owner:xxx@ep-xxx.us-east-2.aws.neon.tech/luxblinds?sslmode=require
-   BETTER_AUTH_URL = https://tu-proyecto.vercel.app
-   APP_ORIGIN = https://tu-proyecto.vercel.app
-   BETTER_AUTH_SECRET = (generar con: openssl rand -hex 32)
-   EMAIL_PROVIDER = mock
-   SMS_ENABLED = false
-   STORAGE_PROVIDER = local-test
+   ```powershell
+   npm test
+   npm run typecheck
+   npm run build
    ```
 
-6. Click **"Deploy"**
+## 2. GitHub
 
-## Paso 4: Post-Deploy
-
-1. Ir a **Vercel Dashboard** → tu proyecto → **Terminal**
-2. Ejecutar:
-
-   ```bash
-   npx prisma migrate deploy
-   npx prisma db seed
-   ```
-
-3. Verificar:
-   ```bash
-   curl https://tu-proyecto.vercel.app/api/health
-   ```
-
-## Paso 5: Probar
-
-1. **Portal Cliente:** https://tu-proyecto.vercel.app
-   - Login: `client@luxblinds.demo` / `demo12345678`
-
-2. **Admin Panel:** https://tu-proyecto.vercel.app/admin
-   - Login: `admin@luxblinds.demo` / `demo12345678`
-
-## Variables de Entorno Completas
-
-```env
-# Database (Neon)
-DATABASE_URL=postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/luxblinds?sslmode=require
-
-# Auth
-BETTER_AUTH_URL=https://tu-proyecto.vercel.app
-APP_ORIGIN=https://tu-proyecto.vercel.app
-BETTER_AUTH_SECRET=tu-secreto-aqui
-
-# Providers (mock para demo)
-EMAIL_PROVIDER=mock
-SMS_ENABLED=false
-SMS_PROVIDER=mock
-STORAGE_PROVIDER=local-test
-STORAGE_ENDPOINT=
-STORAGE_BUCKET=
-STORAGE_REGION=
-STORAGE_ACCESS_KEY_ID=
-STORAGE_SECRET_ACCESS_KEY=
+```powershell
+git status
+git add .
+git commit -m "Prepare production deployment"
+git push origin main
 ```
 
-## Troubleshooting
+No subas `.env`, `.env.local`, `.neon` ni contraseñas.
 
-**Error: "Can't reach database"**
-- Verificar que DATABASE_URL tiene `?sslmode=require`
-- Verificar que Neon no está en pausa (free tier se pausa tras 5 min inactividad)
+## 3. Neon
 
-**Error: "Authentication failed"**
-- Verificar BETTER_AUTH_SECRET está definido
-- Verificar BETTER_AUTH_URL y APP_ORIGIN coinciden con la URL de Vercel
+El proyecto Neon debe estar en la rama `production`. Para provisionar el bucket privado declarado en `neon.ts`:
 
-**Migraciones no aplicadas**
-- Ejecutar `npx prisma migrate deploy` en Vercel Terminal
+```powershell
+npm i -g neon@latest
+neon login
+neon link --project-id ancient-forest-02019608 --branch production -y
+neon deploy
+```
 
-**Build falla**
-- Verificar que Node.js 24 está seleccionado en Vercel
-- Verificar que `prisma generate` está en el build command
+Después de `neon deploy`, conserva de forma privada los valores de conexión y, para almacenamiento, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3` y `AWS_REGION`.
 
-## Costes
+## 4. Vercel
 
-| Servicio | Plan | Coste |
-|----------|------|-------|
-| Vercel | Hobby | $0/mes |
-| Neon | Free | $0/mes |
-| GitHub | Free | $0/mes |
-| **Total** | | **$0/mes** |
+1. En Vercel, importa el repositorio de GitHub y deja que detecte Next.js.
+2. No sobrescribas el comando de build: `vercel.json` aplica migraciones y crea el administrador inicial únicamente en producción.
+3. En **Settings → Environment Variables**, añade estas variables para **Production**:
 
-**Limitaciones Free Tier:**
-- Vercel: 100 GB bandwidth/mes
-- Neon: 0.5 GB storage, 24/7 compute
-- Perfecto para demo/desarrollo
+   ```env
+   DATABASE_URL=<cadena pooled de Neon>
+   DATABASE_URL_UNPOOLED=<cadena directa de Neon>
+   BETTER_AUTH_URL=https://<tu-proyecto>.vercel.app
+   APP_ORIGIN=https://<tu-proyecto>.vercel.app
+   BETTER_AUTH_SECRET=<secreto aleatorio de 32+ caracteres>
+
+   INITIAL_ADMIN_EMAIL=<correo del administrador>
+   INITIAL_ADMIN_PASSWORD=<contraseña única de 12+ caracteres>
+   INITIAL_ADMIN_NAME=Administrator
+
+   EMAIL_PROVIDER=resend
+   RESEND_API_KEY=<clave de Resend>
+   RESEND_EMAIL_FROM=LUX Blinds <no-reply@tu-dominio.com>
+   SMS_ENABLED=false
+   SMS_PROVIDER=mock
+
+   STORAGE_PROVIDER=neon
+   STORAGE_BUCKET=lux-uploads
+   AWS_ACCESS_KEY_ID=<valor de Neon>
+   AWS_SECRET_ACCESS_KEY=<valor de Neon>
+   AWS_ENDPOINT_URL_S3=<valor de Neon>
+   AWS_REGION=us-east-2
+   ```
+
+   La integración Neon de Vercel puede cargar las cadenas de base de datos. Comprueba que también exista `DATABASE_URL_UNPOOLED`; si no aparece, añádela manualmente. Las cuatro variables `AWS_*` se copian desde `neon deploy`.
+
+4. Pulsa **Deploy**.
+
+El primer build de producción ejecuta, en este orden: `prisma migrate deploy`, `npm run db:seed` y `npm run build`. El seed crea una organización técnica, una cuenta con rol `admin`, su credencial Better Auth y su membresía. No crea usuarios cliente ni pedidos de ejemplo.
+
+## 5. Comprobaciones tras el primer deploy
+
+1. Abre `https://<tu-proyecto>.vercel.app/api/health`. Debe responder:
+
+   ```json
+   { "status": "ok", "database": "ready" }
+   ```
+
+2. Inicia sesión con `INITIAL_ADMIN_EMAIL` y `INITIAL_ADMIN_PASSWORD`.
+3. Debes llegar a `https://<tu-proyecto>.vercel.app/admin-orders`.
+4. El panel muestra el estado vacío hasta que entren pedidos reales; ese estado es esperado y no usa fixtures.
+5. Cuando el primer deploy haya creado el administrador, elimina **las dos** variables `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` de Vercel y redeploya. Los siguientes deploys detectarán la cuenta existente y no alterarán su contraseña.
+
+## 6. Dominio propio
+
+Al añadir un dominio, actualiza `BETTER_AUTH_URL` y `APP_ORIGIN` con `https://tu-dominio.com`, y vuelve a desplegar. Vercel gestiona HTTPS; no uses una URL HTTP en producción.
+
+## Diagnóstico
+
+- `503` en `/api/health`: revisa las variables de Neon y la migración; no pruebes login hasta que salud indique `database: ready`.
+- Fallo en el primer deploy por bootstrap: faltan `INITIAL_ADMIN_EMAIL` o `INITIAL_ADMIN_PASSWORD`, o la contraseña tiene menos de 12 caracteres.
+- `401` al iniciar sesión: confirma el correo y contraseña del administrador inicial; el usuario se identifica con su correo.
+- `403` en rutas administrativas: no edites manualmente el rol; la cuenta bootstrap ya se crea con rol `admin` y membresía.
